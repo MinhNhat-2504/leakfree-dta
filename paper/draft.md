@@ -1,9 +1,8 @@
 # How much of our progress is leakage? A leakage-audited benchmark and shift-robust baseline for drug–target affinity
 
-**Draft status.** Sections 1–5 are written against measured results. Section 6
-is partially written: the dataset-level audit is complete and its numbers are
-real; the split ladder, the model re-runs and the robustness comparison are
-still computing. Every number not yet measured appears as `[PENDING: …]` rather
+**Draft status.** Sections 1–5 are written against measured results, as are
+Sections 6.1 and 6.2 including Table 1 and the per-family breakdown. The model
+re-runs and the robustness comparison are still outstanding. Every number not yet measured appears as `[PENDING: …]` rather
 than as a plausible placeholder, so nothing in this file can be mistaken for a
 result. Do not circulate until those are filled.
 
@@ -28,8 +27,16 @@ pairs holding both. Third, Bemis–Murcko scaffold splitting, the field's usual
 "hard" split, closes almost none of the recoverable leakage, because homologous
 series receive different scaffolds while remaining fingerprint-identical.
 
-[PENDING: the quantitative leakage ladder on ChEMBL, the re-measured model
-ranking, and the shift-robust baseline's coverage results.]
+On the ladder itself: the random split most of this literature reports on leaves
+14.9% of test rows recoverable by lookup and 100% of them targeting a protein
+already seen in training, where a predictor that ignores the protein entirely
+reaches Pearson 0.520. Scaffold splitting halves the recoverable fraction to
+8.4%; fingerprint clustering takes it to 1.4%. Holding out target accessions —
+the usual "protein-cold" split — still leaves 78.9% of test rows with a training
+protein above 40% sequence identity.
+
+[PENDING: the re-measured model ranking and the shift-robust baseline's coverage
+results.]
 
 We release the audit as a package, the splits as content-addressed manifests,
 and the per-row predictions of every model we re-ran.
@@ -329,11 +336,30 @@ each fold and of the dataset. A reader applies the split to their own copy and i
 told immediately if that copy differs from ours — a near-universal failure mode
 when "the same" ChEMBL extract is rebuilt a year later.
 
-Two rungs are built so far: `random` (509,988 / 72,391 / 145,856) and
-`ligand_scaffold` (509,752 / 72,824 / 145,659), both with zero exclusions as
-expected for a single-axis split.
+All nine rungs, over the 728,235-pair benchmark:
 
-[PENDING: the remaining seven rungs and their exclusion fractions.]
+| split | train | valid | test | excluded |
+| --- | --: | --: | --: | --: |
+| `random` | 509,988 | 72,391 | 145,856 | 0 (0.0%) |
+| `ligand_scaffold` | 509,752 | 72,824 | 145,659 | 0 (0.0%) |
+| `ligand_cluster` | 509,742 | 72,827 | 145,666 | 0 (0.0%) |
+| `protein_identity` | 508,929 | 73,653 | 145,653 | 0 (0.0%) |
+| `protein_cluster30` | 453,046 | 81,237 | 193,952 | 0 (0.0%) |
+| `protein_cluster50` | 506,711 | 74,460 | 147,064 | 0 (0.0%) |
+| `both_cold` | 224,655 | 18,357 | 45,115 | 440,108 (60.4%) |
+| `temporal` | 499,922 | 76,172 | 107,527 | 44,614 (6.1%) |
+| `leakfree` | 195,322 | 915 | 4,903 | 527,095 (72.4%) |
+
+Single-axis rungs exclude nothing, as they must. The cost appears when axes
+compose: `both_cold` discards 60.4% of the data and `leakfree` 72.4%, leaving
+4,903 test rows. That is the honest price of closing every channel at once on
+this benchmark, and it is a result in itself — a dataset of 728,235 measurements
+supports a test set of five thousand once nothing is allowed to leak.
+
+The small `leakfree` fold is a real constraint on what can be concluded from it.
+Model comparisons on that rung carry wide intervals, and we report `both_cold`
+alongside it, which closes both structural channels while retaining 45,115 test
+rows and differs only in dropping the temporal constraint.
 
 ### 5.2 Models
 
@@ -400,15 +426,87 @@ Complete; see Section 4.
 
 ### 6.2 The leakage ladder
 
-[PENDING: Table 1 — affected test fraction per channel for each rung, overall
-and per family. Currently computing; the ligand clustering over 459,457
-structures is the long step.]
+**Table 1.** Fraction of test rows affected, by channel, for each rung.
+"Recoverable" is the pair axis: the same pair, or a ligand at Tanimoto ≥ 0.90
+measured against the same target, present in training. The other columns are
+context, not leakage in themselves.
 
-The hypothesis under test, pre-registered in the repository: recoverable leakage
-falls sharply from `random` to `ligand_cluster` but only slightly from `random`
-to `ligand_scaffold`, and the dominant channel differs by family — protein
-identity for kinases, ligand similarity for GPCRs, label inconsistency for
-proteases.
+| split | test rows | **recoverable** | protein ≥40% | same ligand | near-dup ligand | same scaffold | best shortcut (Pearson) |
+| --- | --: | --: | --: | --: | --: | --: | --- |
+| `random` | 145,856 | **14.87%** | 100.00% | 46.77% | 10.40% | 84.17% | `ligand_mean` 0.520 |
+| `ligand_scaffold` | 145,659 | **8.41%** | 100.00% | 0.00% | 2.09% | 0.00% | `target_mean` 0.368 |
+| `ligand_cluster` | 145,666 | **1.42%** | 99.97% | 0.00% | 0.40% | 52.23% | `target_mean` 0.385 |
+| `protein_identity` | 145,653 | 0.00% | **78.87%** | 48.32% | 9.11% | 60.28% | `ligand_mean` 0.451 |
+| `protein_cluster30` | 193,952 | 0.00% | 0.00% | 25.28% | 5.54% | 36.72% | `ligand_mean` 0.387 |
+| `protein_cluster50` | 147,064 | 0.00% | 37.59% | 31.44% | 6.30% | 43.04% | `ligand_mean` 0.428 |
+| `both_cold` | 45,115 | 0.00% | 0.00% | 0.00% | 0.03% | 8.62% | `global_mean` 0.000 |
+| `temporal` | 107,527 | 1.05% | 99.38% | 3.86% | 0.92% | 18.53% | `target_mean` 0.188 |
+| `leakfree` | 4,903 | **0.00%** | 0.00% | 0.00% | 0.02% | 8.83% | `global_mean` 0.000 |
+
+Four readings.
+
+**The random split, which most of this literature reports on, leaves 14.9% of
+test rows recoverable by lookup and 100% of them targeting a protein already
+seen in training.** It is a transductive benchmark described as a predictive one.
+
+**Scaffold splitting removes about half the recoverable leakage, and fingerprint
+clustering removes most of the rest**: 14.87% → 8.41% → 1.42%. Our synthetic
+fixture predicted a starker contrast (24.6% → 20.5% → 0.4%), overstating how
+little scaffold splitting achieves, because its ligands were deliberately built
+as homologous series. On real chemistry the scaffold split is worth something —
+it halves the problem — and still leaves six times more recoverable leakage than
+clustering does. We report the weaker real figure, not the fixture's.
+
+**Holding out accessions is not a protein-cold split.** Under
+`protein_identity`, 78.9% of test rows still have a training protein at ≥40%
+sequence identity. The channel only closes under identity clustering, and at 50%
+identity 37.6% remains, as it must: clustering at 50% permits neighbours between
+40% and 50%.
+
+**The shortcut probe is the uncomfortable column.** On the random split a
+predictor that sees only the ligand and ignores the protein entirely reaches
+Pearson 0.520. On `protein_identity` it still reaches 0.451. Any model's
+reported correlation on such a split has to be read against that floor. On
+`both_cold` and `leakfree` every shortcut collapses to zero, because no test
+target or ligand appears in training at all.
+
+A residual 8.6–8.8% scaffold overlap persists on the two strictest rungs. This is
+not leftover leakage but two different criteria: ligands are clustered by
+fingerprint, and a Bemis–Murcko scaffold can span several fingerprint clusters.
+
+#### 6.2.1 Per-family channels: the pre-registered hypothesis, partly refuted
+
+We registered before measuring that the dominant channel would differ by family:
+protein identity for kinases, ligand similarity for GPCRs, label inconsistency
+for proteases.
+
+| family | protein ≥40% under accession holdout | near-duplicate ligands, random split | replicate conflict rate | noise floor |
+| --- | --: | --: | --: | --: |
+| kinase | **84.2%** | 22.2% | 20.5% | 0.559 |
+| GPCR | 74.6% | 24.3% | 27.2% | 0.674 |
+| protease | 76.8% | **46.6%** | **28.8%** | **0.733** |
+
+Two thirds of the hypothesis survives and one third does not.
+
+Kinases are the most exposed on the protein axis, as predicted, but the margin is
+narrow: 84.2% against 74.6% and 76.8%. Accession holdout fails for every family,
+not distinctively for kinases, and the conserved ATP site is a weaker explanation
+than we expected.
+
+Proteases are worst on label quality, as predicted — a 0.733 log-unit noise floor
+against 0.559 for kinases, and the highest conflict rate.
+
+The GPCR prediction is wrong. We expected GPCRs to dominate the ligand axis
+through tight analogue series; proteases do, and by a wide margin — 46.6% of
+protease test rows have a near-duplicate training ligand, against 24.3% for
+GPCRs. Proteases turn out to be the family where chemistry and labels are both
+worst, while GPCRs are unexceptional on every axis we measured.
+
+The broader claim the hypothesis was built to support does hold: no single
+splitting rule is sufficient, because the families do not rank the same way on
+different channels. But the specific family-to-channel assignment we expected was
+only partly right, and we report it as registered rather than rewriting it to
+match.
 
 ### 6.3 Inflation across the ladder
 
@@ -484,10 +582,10 @@ look plausible and mean nothing.
 
 ## Notes for the authors (remove before submission)
 
-- Fill every `[PENDING]`. There are eight: the abstract, Section 5.1's remaining
-  rungs, and Sections 6.2 through 6.6 and 7.
-  Check with `grep -c '\[PENDING' paper/draft.md`, which counts ten including
-  this line and the status note at the top.
+- Fill every `[PENDING]`. Five remain: the abstract's model results, Sections 6.3
+  through 6.6, and Section 7.
+  Check with `grep -c '\[PENDING' paper/draft.md`, which counts one more for
+  this line.
 - Re-check novelty before writing the final introduction: search arXiv, bioRxiv
   and ChemRxiv for "DTI benchmark leakage", "drug target affinity data leakage
   audit", "scaffold split insufficient". If the ladder has been published,
