@@ -39,6 +39,19 @@ logger = get_logger(__name__)
 #: that choice. Named so the split cache can key on it.
 DEFAULT_CLUSTER_COVERAGE = 0.50
 
+#: Bumped whenever protein clustering changes in a way that alters its output.
+#:
+#: The split cache keys on this. Twice now a change to clustering was masked by a
+#: stale cache -- once when the coverage default moved and coverage was not in
+#: the key, once when the search parameters changed and nothing in the key
+#: reflected the algorithm at all. A parameter-by-parameter key cannot catch the
+#: second kind; a version can.
+#:
+#: v1: mmseqs easy-cluster, greedy set-cover.
+#: v2: connected components of the all-against-all search at the threshold, with
+#:     no coverage filter, so clustering and the audit apply identical criteria.
+PROTEIN_CLUSTERING_VERSION = 2
+
 KMER_SIZE = 5
 #: k-mer Jaccard below this cannot reach 30% identity, so exact alignment is skipped.
 KMER_PREFILTER = 0.02
@@ -324,48 +337,114 @@ def _max_identity_pairwise(
 def _mmseqs_cluster(
     sequences: Mapping[str, str], *, min_seq_id: float, coverage: float
 ) -> dict[str, int]:
-    """Run ``mmseqs easy-cluster`` and parse its representative mapping."""
+    """Cluster by connected components of the similarity graph at ``min_seq_id``.
+
+    Not ``mmseqs easy-cluster``, and the difference is the difference between a
+    protein-cold split and one that only claims to be.
+
+    ``easy-cluster`` is a greedy set-cover: a sequence joins the cluster of a
+    representative it is similar enough to. That does not imply the property a
+    leakage audit needs, which is that two *different* clusters are below the
+    threshold to each other. Measured on the ChEMBL 37 target set, clustering at
+    30% identity left 21 distinct pairs above 40% identity in different clusters
+    -- DAPK3 and DAPK1 at 65%, MAPK15 and ERK2 at 48%, MMP-3 and MMP-2 at 43%.
+    The split built on it showed 22% of kinase and 33% of protease test rows
+    with a close training protein, which is what sent us looking.
+
+    So the search is run all-against-all and the clusters are the connected
+    components of the graph whose edges are pairs at or above the threshold,
+    measured on the same basis as :func:`max_identity_to_set`. That guarantees by
+    construction the property the audit checks for.
+
+    Single linkage can chain: A close to B, B close to C, A and C not close, all
+    three in one cluster. For an audit that is the right direction to err, since
+    over-merging separates train and test more aggressively, never less.
+    """
     binary = mmseqs_binary()
     if binary is None:
         raise RuntimeError("MMseqs2 is not available")
 
+    keys = sorted(sequences)
+    parent = {key: key for key in keys}
+
+    def find(key: str) -> str:
+        while parent[key] != key:
+            parent[key] = parent[parent[key]]
+            key = parent[key]
+        return key
+
+    def union(left: str, right: str) -> None:
+        a, b = find(left), find(right)
+        if a != b:
+            parent[max(a, b)] = min(a, b)
+
     with tempfile.TemporaryDirectory(prefix="leakfree_mmseqs_") as tmp:
         tmpdir = Path(tmp)
         fasta = write_fasta(sequences, tmpdir / "targets.fasta")
-        prefix = tmpdir / "clu"
+        result = tmpdir / "search.m8"
         command = [
             binary,
-            "easy-cluster",
+            "easy-search",
             str(fasta),
-            str(prefix),
+            str(fasta),
+            str(result),
             str(tmpdir / "work"),
-            "--min-seq-id",
-            str(min_seq_id),
-            "-c",
-            str(coverage),
-            "--cov-mode",
-            "0",
-            "--cluster-mode",
-            "0",
+            "-s",
+            "7.5",
+            # Permissive thresholds on purpose: the identity test is applied
+            # below, and a prefilter that dropped a remote hit would understate
+            # how much two clusters overlap.
+            "-e",
+            "10000",
+            "--max-seqs",
+            "2000",
+            # No coverage filter. The audit's max_identity_to_set does not apply
+            # one either, and the two must use identical criteria or the split
+            # will not satisfy the check that scores it: a pair can clear the
+            # identity threshold through a short high-identity local alignment
+            # that a coverage filter rejects, which is exactly how 21 pairs above
+            # 40% identity ended up in different clusters. Coverage is instead
+            # expressed through the identity definition below, which divides the
+            # matched residues by the length of the shorter sequence.
+            "--format-output",
+            "query,target,fident,alnlen,qlen,tlen",
             "-v",
             "1",
         ]
         logger.debug("running: %s", " ".join(command))
         subprocess.run(command, check=True, capture_output=True, text=True)
 
-        tsv = prefix.with_name(prefix.name + "_cluster.tsv")
-        if not tsv.exists():
-            raise RuntimeError(f"MMseqs2 produced no cluster table at {tsv}")
+        if not result.exists():
+            raise RuntimeError(f"MMseqs2 produced no search table at {result}")
 
-        representatives: dict[str, str] = {}
-        with tsv.open(encoding="utf-8") as handle:
+        n_edges = 0
+        with result.open(encoding="utf-8") as handle:
             for line in handle:
                 fields = line.rstrip("\n").split("\t")
-                if len(fields) >= 2:
-                    representatives[fields[1]] = fields[0]
+                if len(fields) < 6:
+                    continue
+                query, target = fields[0], fields[1]
+                if query == target or query not in parent or target not in parent:
+                    continue
+                try:
+                    fident, alnlen, qlen, tlen = (
+                        float(fields[2]),
+                        int(fields[3]),
+                        int(fields[4]),
+                        int(fields[5]),
+                    )
+                except ValueError:
+                    continue
+                shorter = min(qlen, tlen)
+                identity = min(fident * alnlen / shorter, 1.0) if shorter else 0.0
+                if identity >= min_seq_id:
+                    union(query, target)
+                    n_edges += 1
 
-    order = {rep: i for i, rep in enumerate(dict.fromkeys(representatives.values()))}
-    return {member: order[rep] for member, rep in representatives.items()}
+    logger.debug("linked %d pairs at or above %.2f identity", n_edges, min_seq_id)
+    roots = {find(key) for key in keys}
+    order = {root: index for index, root in enumerate(sorted(roots))}
+    return {key: order[find(key)] for key in keys}
 
 
 # --- Fallback path ----------------------------------------------------------

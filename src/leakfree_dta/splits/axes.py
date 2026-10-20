@@ -173,10 +173,21 @@ def _protein_cluster_groups(df: pd.DataFrame, *, identity: float) -> pd.Series:
     # Coverage belongs in the key. It changes the clustering substantially -- 424
     # clusters against 279 on this target set -- so leaving it out serves a stale
     # clustering the moment the default moves, which is what happened once.
-    from leakfree_dta.prot.identity import DEFAULT_CLUSTER_COVERAGE
+    from leakfree_dta.prot.identity import (
+        DEFAULT_CLUSTER_COVERAGE,
+        PROTEIN_CLUSTERING_VERSION,
+    )
 
     cache = _cluster_cache_path(
-        "protein", sorted(sequences), identity=identity, coverage=DEFAULT_CLUSTER_COVERAGE
+        "protein",
+        sorted(sequences),
+        identity=identity,
+        coverage=DEFAULT_CLUSTER_COVERAGE,
+        # The algorithm itself is part of the key. Parameters alone are not
+        # enough: changing how the clustering works, rather than what it is
+        # configured with, leaves every parameter identical and the cached
+        # answer wrong.
+        version=PROTEIN_CLUSTERING_VERSION,
     )
     if cache.exists():
         mapping = read_json(cache)
