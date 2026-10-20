@@ -10,28 +10,37 @@ channels are closed.
 
 ---
 
-## The claim, in one table
+## The claim, in two rows of one table
 
 Running the pipeline on its calibration dataset — a synthetic benchmark whose
-leakage is known by construction — gives:
+leakage is planted by construction — gives:
 
-| split | test rows recoverable by lookup | what the split constrains |
-| --- | --: | --- |
-| `random` | **24.6%** | nothing |
-| `ligand_scaffold` | **20.5%** | Bemis–Murcko scaffold |
-| `ligand_cluster` | **0.4%** | ECFP4 cluster |
-| `protein_identity` | 0.0% | target accession |
-| `temporal` | 18.4% | publication year |
+| split | recoverable by lookup | protein ≥40% identical in train | what the split constrains |
+| --- | --: | --: | --- |
+| `random` | **24.6%** | 100% | nothing |
+| `ligand_scaffold` | **20.5%** | 100% | Bemis–Murcko scaffold |
+| `ligand_cluster` | **0.4%** | 100% | ECFP4 cluster |
+| `protein_identity` | 0.0% | **20.0%** | target accession |
+| `protein_cluster30` | 0.0% | **0.0%** | 30% sequence identity |
+| `temporal` | 18.4% | 100% | publication year |
 
-The second row is the point. **Scaffold splitting — the field's standard "hard"
-split — removes almost none of the recoverable leakage.** The reason is a property
-of the representation rather than of the data: a homologous series (same core, a
-linker one or two carbons longer) has *different* InChIKeys and *different*
-Bemis–Murcko scaffolds, so a scaffold split cheerfully separates its members — but
-*identical* ECFP4 fingerprints, so no fingerprint-based model can tell which side
-of the boundary it is looking at.
+Two rows carry the paper, one per axis.
 
-A test set built that way is, for the model, partly a copy of its training set.
+**`ligand_scaffold`.** Scaffold splitting — the field's standard "hard" split —
+removes almost none of the recoverable leakage, falling only from 24.6% to 20.5%.
+The cause is a property of the representation, not of the data: a homologous
+series (same core, a linker one or two carbons longer) has *different* InChIKeys
+and *different* Bemis–Murcko scaffolds, so a scaffold split cheerfully separates
+its members — but *identical* ECFP4 fingerprints, so no fingerprint-based model
+can tell which side of the boundary it is looking at. The split achieves perfect
+scaffold separation (0% scaffold overlap) and still leaks a fifth of its test set.
+
+**`protein_identity`.** Holding out every target accession leaves 20% of test rows
+with a training protein at 40% sequence identity or above. Accession-level
+holdout is not protein-level holdout; clustering at 30% identity is what closes
+the channel.
+
+A test set built either way is, for the model, partly a copy of its training set.
 
 ---
 

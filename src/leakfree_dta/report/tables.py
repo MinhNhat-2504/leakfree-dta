@@ -31,7 +31,15 @@ def leakage_ladder(dataset: str) -> pd.DataFrame:
     for split_dir in sorted(audit_root.iterdir()):
         if not split_dir.is_dir() or split_dir.name == "dataset":
             continue
-        report_file = split_dir / "report.json" if (split_dir / "report.json").exists() else split_dir / "overall" / "report.json"
+        # Two audits can write into the same split directory: `leakfree audit
+        # --split` writes `overall/report.json` plus a per-family breakdown, while
+        # `leakfree demo` writes a flat `report.json` from a quicker pass that may
+        # have skipped the expensive checks. Prefer the full one -- taking the flat
+        # one silently drops whichever channels the quick pass skipped, and a
+        # missing channel reads as a clean one.
+        full = split_dir / "overall" / "report.json"
+        quick = split_dir / "report.json"
+        report_file = full if full.exists() else quick
         if not report_file.exists():
             continue
         payload = read_json(report_file)

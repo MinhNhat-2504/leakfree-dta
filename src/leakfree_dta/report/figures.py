@@ -44,38 +44,62 @@ plt.rcParams.update(
 )
 
 
-def plot_leakage_ladder(table: pd.DataFrame, path: str | Path, *, channels: tuple[str, ...] = (
+#: Channels drawn in Figure 1, in order. The two ``pair``-axis channels come
+#: first because they are the ones that make a test label recoverable by lookup;
+#: the wider channels follow as context. Omitting
+#: ``near_duplicate_pair_overlap`` would leave the figure without its headline.
+LADDER_CHANNELS: tuple[str, ...] = (
     "pair_overlap",
+    "near_duplicate_pair_overlap",
     "protein_identity_overlap",
     "ligand_identity_overlap",
     "near_duplicate_ligands",
     "scaffold_overlap",
-)) -> Path | None:
+)
+
+
+def plot_leakage_ladder(
+    table: pd.DataFrame, path: str | Path, *, channels: tuple[str, ...] = LADDER_CHANNELS
+) -> Path | None:
     """Figure 1: affected test fraction per channel, as the split tightens."""
     present = [channel for channel in channels if channel in table.columns]
     if table.empty or not present:
         logger.warning("no leakage data to plot")
         return None
 
-    fig, ax = plt.subplots(figsize=(7.2, 3.6))
+    fig, ax = plt.subplots(figsize=(7.6, 4.4))
     x = np.arange(len(table))
     width = 0.8 / len(present)
 
     for index, channel in enumerate(present):
         values = pd.to_numeric(table[channel], errors="coerce").fillna(0.0).to_numpy() * 100
+        # The two recoverable-by-lookup channels are drawn solid; the contextual
+        # ones are hatched, so the distinction survives printing in greyscale.
+        is_recoverable = channel in ("pair_overlap", "near_duplicate_pair_overlap")
         ax.bar(
             x + index * width - 0.4 + width / 2,
             values,
             width=width,
             label=channel.replace("_", " "),
             color=PALETTE[index % len(PALETTE)],
+            hatch="" if is_recoverable else "///",
+            edgecolor="white",
+            linewidth=0.3,
         )
 
     ax.set_xticks(x)
     ax.set_xticklabels(table["split"], rotation=30, ha="right")
     ax.set_ylabel("test rows affected (%)")
+    ax.set_ylim(0, 108)
     ax.set_title("Leakage by channel, across the split ladder")
-    ax.legend(frameon=False, fontsize=7, ncols=2)
+    # Below the axes: inside, the legend covers the tall bars that carry the point.
+    ax.legend(
+        frameon=False,
+        fontsize=7,
+        ncols=3,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.32),
+    )
     fig.savefig(path)
     plt.close(fig)
     return Path(path)
