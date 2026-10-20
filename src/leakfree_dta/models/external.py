@@ -47,8 +47,10 @@ INCLUSION_CRITERIA = (
 #: Stated in advance as well, so an inconvenient model cannot be excluded later.
 EXCLUSION_CRITERIA = (
     "Requires a proprietary dependency or a licence we do not hold.",
-    "Requires 3D complex structures for every pair, which the ChEMBL-derived "
-    "benchmark does not have (these are discussed separately, not re-run).",
+    "Requires experimentally determined 3D complex structures for every pair, "
+    "which the ChEMBL-derived benchmark does not have. Note this excludes models "
+    "needing *measured* structures, not ones that predict their own: a co-folding "
+    "model is in scope, on a subset, and its coverage_scope says so.",
     "No usable inference entry point after one working day of effort, documented "
     "in the attempt log.",
 )
@@ -65,6 +67,10 @@ class ExternalModelSpec:
     commit: str | None = None
     entrypoint: str = ""
     environment: str = ""
+    #: Fraction of the benchmark this model is run on, and why if not all of it.
+    #: A model evaluated on a subset is comparable to the others only on that
+    #: subset, so the figure has to carry the caveat rather than the caption.
+    coverage_scope: str = "full benchmark"
     reported_metric: str = "ci"
     reported_value: float | None = None
     reported_benchmark: str = ""
@@ -80,7 +86,8 @@ class ExternalModelSpec:
         return payload
 
 
-#: The models the paper re-runs. Values marked ``None`` are filled in as the
+#: The models the paper re-runs, in publication order so the registry reads as
+#: the timeline the progress curve plots. Values marked ``None`` are filled in as the
 #: re-evaluation proceeds; the specs are committed first so the target list is
 #: fixed before any result is known.
 REGISTRY: tuple[ExternalModelSpec, ...] = (
@@ -144,6 +151,34 @@ REGISTRY: tuple[ExternalModelSpec, ...] = (
         reported_split="various",
         notes="Stands in for the 'pretrained embeddings' family. Fast to run, which "
         "makes it a useful control for whether scale alone closes the gap.",
+    ),
+    ExternalModelSpec(
+        name="Boltz-2",
+        year=2025,
+        citation="Passaro et al., 2025",
+        repository="https://github.com/jwohlwend/boltz",
+        entrypoint="boltz predict --affinity",
+        environment="Co-folding model with an affinity head; predicts structure and "
+        "affinity together.",
+        reported_metric="pearson",
+        reported_benchmark="FEP and internal sets",
+        reported_split="various",
+        coverage_scope=(
+            "a stratified subset of a few thousand pairs, not the full benchmark"
+        ),
+        adaptations=[
+            "Run on a subset. Boltz-2 predicts a structure per complex, at minutes "
+            "of GPU time each, so scoring the full three-family extract is several "
+            "GPU-years. The subset is stratified over protein cluster and affinity "
+            "range so the comparison is fair within it.",
+        ],
+        notes="Named in the project plan and kept here rather than dropped. It is "
+        "the only model in the list from after 2023, so without it the progress "
+        "curve has no modern anchor and the paper's central question goes "
+        "unanswered at the end that matters most. The scores are produced by the "
+        "companion project (conformal-cofolding), which needs them anyway, and "
+        "imported here; the two papers make different claims from the same "
+        "computation and cite each other.",
     ),
 )
 
