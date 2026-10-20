@@ -138,30 +138,62 @@ fraction because nobody has measured it.
 | F4 coverage by group | `report.figures` | works |
 | F5 progress curve | `eval.progress_curve` | needs the re-runs |
 | S1 curation log | `leakfree curate` | works |
-| S2 inclusion criteria | `models.external` | written, pre-registered |
+| S2 inclusion criteria | `models/external.py` | written, pre-registered |
 | S3 attempt log | `models.external` | needs the re-runs |
 
 ---
 
-## Plan
+## Plan and current state
 
-**Phase 1 — real data (3–4 weeks).** Build the ChEMBL extract. Install MMseqs2 and
-re-run everything that currently uses the fallback. Fetch BindingDB for the
-cross-source table. The pipeline is finished; this phase is data work.
+**Phase 1 — real data.** *Code complete; data in progress.*
 
-**Phase 2 — the re-runs (4–6 weeks).** The critical path and the main risk. Run
-the five models in `models/external.py` on the frozen splits. Fix the inclusion
-criteria *before* starting — they are already committed in
-`configs/experiment/main.yaml` and `models/external.py`, which is the point.
+- MMseqs2 installed and wired. `leakfree info` reports `identity backend
+  mmseqs2`; every audit report and split manifest records which backend produced
+  it, so nothing already computed with the fallback can be mistaken for a
+  publication number.
+- `scripts/download_chembl.py` and `scripts/extract_chembl.py` are written and
+  linted. The SQL in `sql/chembl_activities.sql` has not yet run against a real
+  release.
+- **Blocking:** the ChEMBL 37 SQLite download. The EBI mirror throttles per
+  connection, so the downloader uses twelve parallel byte ranges; even so it
+  sustains only ~0.35 MB/s from here, putting the 5.8 GB archive at roughly four
+  hours. It is resumable — re-running the script continues where it stopped.
+- Still to do once the archive lands: extract (~30 GB, then delete the database;
+  the disk has 54 GB free, so this is tight and the database should not be kept),
+  run the query, curate, rebuild the split ladder with MMseqs2 clustering, and
+  re-audit. BindingDB for the cross-source table is not started.
 
-**Phase 3 — the baseline (2–3 weeks).** Group DRO and conformal are implemented.
-This phase is hyperparameters, the ablation (ERM versus DRO, with and without the
-conformal head), and the per-family breakdown.
+**Phase 2 — the re-runs.** *Harness complete and proven; models not yet re-run.*
+
+- `leakfree_dta.external` clones at a pinned commit, lays out data, runs,
+  collects, scores, and writes the attempt log. Verified end to end against the
+  real DeepDTA repository: it cloned, ran, failed, and produced a correctly
+  populated attempt-log row.
+- The DeepDTA adapter carries six declared compatibility patches and a converter
+  into DeepDTA's native matrix format, with a round-trip check that runs before
+  the model starts.
+- **Known gap:** `run_experiments.py` logs metrics but writes no per-row
+  predictions, so a further patch is needed before DeepDTA can enter the per-row
+  comparison. The adapter's `collect` raises with that exact reason rather than
+  inventing numbers.
+- The GraphDTA, MolTrans and PerceiverCPI adapters are placeholders: the
+  repositories and entry points are right, but neither the data layout nor the
+  compatibility work has been done. Expect each to need its own DeepDTA-sized
+  effort.
+- `deepdta_reimpl` is available now as an interim comparison point, and is named
+  so that no table can present it as a re-run of the published code.
+
+**Phase 3 — the baseline (2–3 weeks).** Group DRO and conformal are implemented
+and tested. This phase is hyperparameters, the ablation (ERM versus DRO, with and
+without the conformal head), and the per-family breakdown. Nothing blocks it
+except real data.
 
 **Phase 4 — writing (3–4 weeks).** Draft, then preprint immediately. Topics 3 and 5
 in the proposal document were both flagged as competitive; the date stamp matters.
 
-Total 3–4 months, consistent with the 3–5 months the proposal estimated.
+Total 3–4 months, consistent with the 3–5 months the proposal estimated. Phase 2
+is the schedule risk: one model took a working session to get as far as a
+reproducible failure, and there are four more.
 
 **Before writing a word, re-check novelty.** Search arXiv, bioRxiv and ChemRxiv for
 "DTI benchmark leakage", "drug target affinity data leakage audit" and
