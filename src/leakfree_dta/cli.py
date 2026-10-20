@@ -64,7 +64,7 @@ def _split_dir(dataset: str) -> Path:
 
 def cmd_curate(args: argparse.Namespace) -> int:
     """Load a source, curate it, and write both the replicate and aggregated tables."""
-    from leakfree_dta.data.curate import curate
+    from leakfree_dta.data.curate import aggregate_replicates, curate
     from leakfree_dta.data.sources import LOADERS
 
     if args.source not in LOADERS:
@@ -89,8 +89,14 @@ def cmd_curate(args: argparse.Namespace) -> int:
 
     # The audit needs replicates; training needs them collapsed. Both are kept so
     # the noise floor is measured on the data the models actually see.
-    replicates, log = curate(raw, aggregate=None, scope_families=args.scope_families)
-    aggregated, _ = curate(raw, aggregate=args.aggregate, scope_families=args.scope_families)
+    # Standardisation is the slow step and its result is identical either way, so
+    # it is done once and the curated table is aggregated from it, rather than
+    # curating the raw table twice.
+    replicates, log = curate(
+        raw, aggregate=None, scope_families=args.scope_families, n_jobs=args.n_jobs
+    )
+    aggregated = aggregate_replicates(replicates, how=args.aggregate)
+    log.record("aggregate_replicates", len(replicates), len(aggregated), how=args.aggregate)
 
     paths.ensure_dirs()
     write_table(replicates, _dataset_path(args.dataset, aggregated=False))
@@ -640,6 +646,12 @@ def build_parser() -> argparse.ArgumentParser:
     curate_parser.add_argument("--input", required=True, help="path to the raw file or directory")
     curate_parser.add_argument("--dataset", required=True, help="name to store the curated dataset under")
     curate_parser.add_argument("--aggregate", default="median", choices=["median", "mean", "first", "max"])
+    curate_parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=-1,
+        help="processes for structure standardisation; -1 uses every core (default)",
+    )
     curate_parser.add_argument("--no-scope-families", dest="scope_families", action="store_false")
     curate_parser.add_argument("--no-assign-families", dest="assign_families", action="store_false")
     curate_parser.add_argument(

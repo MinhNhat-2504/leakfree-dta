@@ -125,11 +125,16 @@ def curate(
     druglike_only: bool = True,
     min_year: int | None = None,
     standardize: bool = True,
+    n_jobs: int = 1,
 ) -> tuple[pd.DataFrame, CurationLog]:
     """Curate a raw table that already carries the pre-canonical column names.
 
     Source loaders are responsible for renaming their columns; this function owns
     the decisions that affect what the benchmark contains.
+
+    ``n_jobs`` is passed to structure standardisation, which dominates the cost of
+    this function: it is roughly fourteen single-threaded hours on the ChEMBL
+    three-family extract.
 
     ``aggregate=None`` keeps replicate measurements, which is what the audit needs.
     ``aggregate="median"`` collapses them, which is what training needs. The
@@ -178,7 +183,7 @@ def curate(
         from leakfree_dta.chem.standardize import standardize_series
 
         before = len(df)
-        standardized = standardize_series(df[schema.SMILES])
+        standardized = standardize_series(df[schema.SMILES], n_jobs=n_jobs)
         df = df.reset_index(drop=True)
         df[schema.SMILES] = standardized["smiles_std"]
         df[schema.LIGAND_KEY] = standardized["inchikey"]

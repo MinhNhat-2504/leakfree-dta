@@ -121,32 +121,77 @@ def standardize_smiles(
     return StandardizedMolecule(canonical, key, key.split("-")[0], True)
 
 
+def _standardize_one(args: tuple[str | None, bool, bool, bool]) -> StandardizedMolecule:
+    """Module-level worker, so it survives pickling to a process pool.
+
+    A closure or a lambda would not: Windows spawns rather than forks, and the
+    child re-imports the module instead of inheriting memory.
+    """
+    value, strip_salts, neutralize, canonical_tautomer = args
+    return standardize_smiles(
+        value,
+        strip_salts=strip_salts,
+        neutralize=neutralize,
+        canonical_tautomer=canonical_tautomer,
+    )
+
+
 def standardize_series(
     smiles: Iterable[str | None],
     *,
     strip_salts: bool = True,
     neutralize: bool = True,
     canonical_tautomer: bool = True,
+    n_jobs: int = 1,
+    chunk_size: int = 200,
 ) -> pd.DataFrame:
-    """Standardise many SMILES, caching repeated inputs.
+    """Standardise many SMILES, deduplicating first and optionally in parallel.
 
-    Benchmark tables repeat the same ligand across dozens of targets, so the cache
-    does most of the work: on a ChEMBL kinase extract it cuts the pass from tens of
-    minutes to a few.
+    Two levels of saving, because this is the slowest step in the pipeline by a
+    wide margin.
+
+    *Deduplication.* A benchmark table repeats the same ligand across dozens of
+    targets. The ChEMBL three-family extract is 1.33M rows over 535k distinct
+    structures, so processing unique values alone removes 60% of the work.
+
+    *Parallelism.* What remains is dominated by tautomer canonicalisation: 93 ms
+    per molecule against 4 ms with it switched off, which is 96% of the cost and
+    puts a single-threaded pass over the extract at about fourteen hours. The
+    step is pure CPU and embarrassingly parallel, so ``n_jobs`` spreads it over
+    processes; 16 cores bring it under an hour.
+
+    Turning tautomer canonicalisation off would be faster still and is the wrong
+    trade here. Tautomers are a genuine source of the same compound appearing as
+    two records, and detecting that is what this project is for.
+
+    ``n_jobs=1`` by default so that importing this function never silently spawns
+    processes; the pipeline passes ``-1`` to use every core.
     """
     values: Sequence[str | None] = list(smiles)
-    cache: dict[str | None, StandardizedMolecule] = {}
-    rows: list[StandardizedMolecule] = []
+    unique = list(dict.fromkeys(values))
 
-    for value in values:
-        if value not in cache:
-            cache[value] = standardize_smiles(
-                value,
-                strip_salts=strip_salts,
-                neutralize=neutralize,
-                canonical_tautomer=canonical_tautomer,
-            )
-        rows.append(cache[value])
+    if n_jobs == 1 or len(unique) < 2 * chunk_size:
+        results = [
+            _standardize_one((value, strip_salts, neutralize, canonical_tautomer))
+            for value in unique
+        ]
+    else:
+        import os
+        from concurrent.futures import ProcessPoolExecutor
+
+        workers = os.cpu_count() or 1 if n_jobs < 0 else min(n_jobs, os.cpu_count() or 1)
+        logger.info(
+            "standardising %d unique structures (of %d rows) across %d processes",
+            len(unique),
+            len(values),
+            workers,
+        )
+        payload = [(value, strip_salts, neutralize, canonical_tautomer) for value in unique]
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(_standardize_one, payload, chunksize=chunk_size))
+
+    lookup = dict(zip(unique, results, strict=True))
+    rows = [lookup[value] for value in values]
 
     n_failed = sum(not row.ok for row in rows)
     if n_failed:

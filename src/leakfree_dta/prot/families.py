@@ -96,8 +96,13 @@ def assign_family(
     uniprot_keywords: str | None = None,
     sequence: str | None = None,
     overrides: Mapping[str, str] | None = None,
+    use_sequence_heuristic: bool = False,
 ) -> FamilyAssignment:
-    """Assign one target, trying each source of evidence in order of trust."""
+    """Assign one target, trying each source of evidence in order of trust.
+
+    ``use_sequence_heuristic`` is off by default, and the default is the result of
+    a measurement rather than caution. See :func:`_assign_from_sequence`.
+    """
     if overrides and target_key in overrides:
         return FamilyAssignment(overrides[target_key], "override_file", "curated")
 
@@ -111,7 +116,7 @@ def assign_family(
             if pattern.search(uniprot_keywords):
                 return FamilyAssignment(family, f"keyword:{pattern.pattern[:24]}", "keyword")
 
-    if sequence:
+    if sequence and use_sequence_heuristic:
         heuristic = _assign_from_sequence(sequence)
         if heuristic is not None:
             return FamilyAssignment(heuristic, "sequence_motif", "heuristic")
@@ -120,13 +125,26 @@ def assign_family(
 
 
 def _assign_from_sequence(sequence: str) -> str | None:
-    """Motif heuristic. Only ever used when no annotation is available.
+    """Motif heuristic. **Off by default: it is wrong most of the time.**
 
-    Deliberately conservative: it claims a kinase only when at least two of the
-    three catalytic motifs are present, and it does not attempt GPCRs at all,
-    because reliable 7-transmembrane detection needs a topology predictor rather
-    than a regular expression. Returning ``None`` is the right answer far more
-    often than guessing.
+    Measured against ChEMBL 37, on the 41 targets in the three-family extract
+    that had no database annotation: 29 of them are not kinases. A 71%
+    false-positive rate, claiming Apolipoprotein B-100, Utrophin, alpha-L-
+    fucosidase and a dozen histone-modifying enzymes as protein kinases.
+
+    The instructive part is why it looked safe. Against 2000 random 450-residue
+    sequences the "two of three motifs" rule fires on 0.4%, which reads as a
+    conservative test. Real proteins are not random: ``D[FLIV]G`` alone matches
+    20% of random sequences and far more of real ones, and ``HRD[LIVMFYWC]``
+    occurs in many enzyme families that are not kinases. Validating a sequence
+    heuristic against random sequences gives false confidence, and this function
+    is the demonstration.
+
+    Kept rather than deleted because it is a reasonable last resort when a
+    reviewer wants coverage over precision, and because the measurement is worth
+    preserving. Enabling it costs 0.85% more data at a 71% error rate, which is a
+    trade almost nobody should take: curate the targets in
+    ``configs/data/target_families.csv`` instead.
     """
     upper = sequence.upper()
     n_kinase_motifs = sum(1 for pattern in _KINASE_MOTIFS if pattern.search(upper))
@@ -143,6 +161,7 @@ def assign_families(
     keyword_column: str | None = "uniprot_keywords",
     sequence_column: str | None = "target_sequence",
     overrides: Mapping[str, str] | None = None,
+    use_sequence_heuristic: bool = False,
 ) -> pd.DataFrame:
     """Assign families for a table of targets.
 
@@ -162,6 +181,7 @@ def assign_families(
                 ),
                 sequence=_maybe_str(getattr(row, sequence_column, None)) if sequence_column else None,
                 overrides=overrides,
+                use_sequence_heuristic=use_sequence_heuristic,
             )
         )
 

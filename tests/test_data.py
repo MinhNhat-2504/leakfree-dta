@@ -347,3 +347,74 @@ class TestChemblProteinClassPaths:
                 "carries no family information, and treating it as if it does would "
                 "hide a broken extraction query."
             )
+
+
+class TestSequenceHeuristicIsOffByDefault:
+    """The motif heuristic is disabled, and the default is a measurement.
+
+    Run against ChEMBL 37, it claimed 41 targets that had no database
+    annotation. 29 of them are not kinases: Apolipoprotein B-100, Utrophin,
+    alpha-L-fucosidase, a dozen histone-modifying enzymes. A 71% false-positive
+    rate, on a project whose subject is undetected errors in benchmark data.
+
+    What makes it worth a test rather than a deletion is why it looked safe.
+    Against random sequences the rule fires on 0.4%, which reads as conservative.
+    Real proteins are not random, and that gap is the lesson.
+    """
+
+    def test_heuristic_is_not_applied_unless_asked(self):
+        from leakfree_dta.prot.families import assign_family
+
+        # A sequence carrying two kinase motifs but belonging to nothing of the kind.
+        sequence = "M" + "HRDLAAG" + "K" * 60 + "DFG" + "A" * 60
+
+        default = assign_family(target_key="X", protein_class=None, sequence=sequence)
+        assert default.family == "unassigned", (
+            "the sequence heuristic fired without being asked for; it is wrong 71% "
+            "of the time on real targets"
+        )
+
+        opted_in = assign_family(
+            target_key="X", protein_class=None, sequence=sequence, use_sequence_heuristic=True
+        )
+        assert opted_in.family == "kinase"
+        assert opted_in.confidence == "heuristic", (
+            "an opted-in heuristic assignment must still be labelled as one, so the "
+            "supplementary table can report how many rows depend on it"
+        )
+
+    def test_database_annotation_still_wins(self):
+        """Disabling the heuristic must not disturb the path that actually works."""
+        from leakfree_dta.prot.families import assign_family
+
+        result = assign_family(
+            target_key="X",
+            protein_class="Enzyme/Kinase/Protein Kinase",
+            sequence="M" + "A" * 200,
+        )
+        assert result.family == "kinase"
+        assert result.confidence == "database"
+
+    def test_random_sequences_understate_the_error_rate(self):
+        """Pins the trap: random sequences make the heuristic look reliable.
+
+        If this ever fails because the random false-positive rate has risen to
+        meet the real one, the heuristic has been changed and the 71% figure in
+        the docstring needs re-measuring.
+        """
+        from leakfree_dta.prot.families import _KINASE_MOTIFS
+
+        rng = np.random.default_rng(0)
+        residues = np.array(list("ACDEFGHIKLMNPQRSTVWY"))
+        sequences = ["".join(rng.choice(residues, 450)) for _ in range(500)]
+
+        fires = sum(
+            1
+            for sequence in sequences
+            if sum(1 for pattern in _KINASE_MOTIFS if pattern.search(sequence)) >= 2
+        )
+        rate = fires / len(sequences)
+        assert rate < 0.05, (
+            f"the rule fires on {rate:.1%} of random sequences. It was 0.4% when the "
+            "71% real-world error rate was measured; if this has changed, re-measure."
+        )
