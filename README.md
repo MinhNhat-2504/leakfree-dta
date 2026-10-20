@@ -88,11 +88,34 @@ Python 3.10+. The audit and split stages need only NumPy, pandas, SciPy,
 scikit-learn and RDKit; PyTorch is required solely for the deep models, and the
 pipeline reports an absent deep model as a missing table row rather than failing.
 
-**MMseqs2 is required for publication-grade numbers.** Without it on `PATH`,
-protein clustering silently falls back to an approximate k-mer + Smith–Waterman
-path. The fallback exists so the pipeline and its tests run anywhere; it is far
-slower and not identical to MMseqs2. Every audit report and split manifest records
-which backend produced it, and `leakfree info` warns when the fallback is active.
+**MMseqs2 is required for publication-grade numbers.** Without it, protein
+clustering falls back to an approximate k-mer + Smith–Waterman path. The fallback
+exists so the pipeline and its tests run anywhere; it is far slower and not
+identical to MMseqs2. Every audit report and split manifest records which backend
+produced it, and `leakfree info` says which is active.
+
+The binary is located in this order: the `LEAKFREE_MMSEQS` environment variable,
+then `PATH`, then a few conventional install locations.
+
+Pointing at it explicitly is the recommended route on Windows. The official
+Windows build is a Cygwin executable surrounded by roughly 250 BusyBox shims —
+`bash`, `awk`, `sed`, `find` and so on — which MMseqs2's shell workflows need
+beside the binary. Putting that directory on `PATH` would shadow the system's own
+tools, so don't.
+
+```bash
+# Linux / macOS
+conda install -c bioconda mmseqs2        # or: brew install mmseqs2
+```
+
+```powershell
+# Windows: unpack the release, then point at the binary rather than adding to PATH
+# https://github.com/soedinglab/MMseqs2/releases -> mmseqs-win64.zip
+& "$HOME\tools\mmseqs\bin\busybox.exe" --install -s "$HOME\tools\mmseqs\bin"
+setx LEAKFREE_MMSEQS "$HOME\tools\mmseqs\bin\mmseqs.exe"
+```
+
+Confirm with `leakfree info`, which should report `identity backend  mmseqs2`.
 
 Verify the installation:
 

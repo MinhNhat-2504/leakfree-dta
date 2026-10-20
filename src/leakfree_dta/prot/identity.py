@@ -19,6 +19,7 @@ the paper's central measurement is made. Identity is computed in one of two ways
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -36,6 +37,54 @@ logger = get_logger(__name__)
 KMER_SIZE = 5
 #: k-mer Jaccard below this cannot reach 30% identity, so exact alignment is skipped.
 KMER_PREFILTER = 0.02
+
+#: Environment variable naming the MMseqs2 executable directly.
+#:
+#: This exists because the official Windows build ships as a Cygwin executable
+#: surrounded by ~250 BusyBox shims -- ``bash``, ``awk``, ``sed``, ``find`` and so
+#: on -- which MMseqs2's shell workflows need beside the binary. Putting that
+#: directory on PATH would shadow the system's own tools, so the binary is pointed
+#: at explicitly instead of being searched for.
+MMSEQS_ENV_VAR = "LEAKFREE_MMSEQS"
+
+#: Checked after PATH, so a standard install is picked up without configuration.
+_MMSEQS_FALLBACK_PATHS = (
+    Path.home() / "tools" / "mmseqs" / "bin" / "mmseqs.exe",
+    Path.home() / "mmseqs" / "bin" / "mmseqs",
+    Path("/usr/local/bin/mmseqs"),
+    Path("/opt/mmseqs/bin/mmseqs"),
+)
+
+
+def mmseqs_binary() -> str | None:
+    """Locate the MMseqs2 executable, or ``None`` if it is unavailable.
+
+    Resolution order: ``LEAKFREE_MMSEQS``, then ``PATH``, then a few conventional
+    install locations. An explicitly configured path that does not exist is a
+    configuration error worth shouting about rather than silently falling back to
+    the approximate backend -- which is the whole failure mode this ordering
+    exists to prevent.
+    """
+    configured = os.environ.get(MMSEQS_ENV_VAR)
+    if configured:
+        path = Path(configured).expanduser()
+        if path.is_file():
+            return str(path)
+        logger.error(
+            "%s points at %s, which is not a file. Fix it or unset it; until then "
+            "protein clustering silently uses the approximate backend.",
+            MMSEQS_ENV_VAR,
+            configured,
+        )
+
+    found = shutil.which("mmseqs")
+    if found:
+        return found
+
+    for candidate in _MMSEQS_FALLBACK_PATHS:
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 @dataclass(frozen=True)
@@ -58,7 +107,7 @@ def identity_backend() -> str:
     Printed into every audit report and split manifest. A reviewer must be able to
     tell whether a number came from the standard tool or the fallback.
     """
-    return "mmseqs2" if shutil.which("mmseqs") else "kmer+sw"
+    return "mmseqs2" if mmseqs_binary() else "kmer+sw"
 
 
 def cluster_proteins(
@@ -112,12 +161,16 @@ def _mmseqs_cluster(
     sequences: Mapping[str, str], *, min_seq_id: float, coverage: float
 ) -> dict[str, int]:
     """Run ``mmseqs easy-cluster`` and parse its representative mapping."""
+    binary = mmseqs_binary()
+    if binary is None:
+        raise RuntimeError("MMseqs2 is not available")
+
     with tempfile.TemporaryDirectory(prefix="leakfree_mmseqs_") as tmp:
         tmpdir = Path(tmp)
         fasta = write_fasta(sequences, tmpdir / "targets.fasta")
         prefix = tmpdir / "clu"
         command = [
-            "mmseqs",
+            binary,
             "easy-cluster",
             str(fasta),
             str(prefix),
