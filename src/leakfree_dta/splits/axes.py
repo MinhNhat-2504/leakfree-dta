@@ -11,13 +11,15 @@ the measurement of interest.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from leakfree_dta.data import schema
 from leakfree_dta.logging import get_logger
+from leakfree_dta.utils.hashing import digest_config, digest_frame_keys
 
 logger = get_logger(__name__)
 
@@ -71,11 +73,27 @@ def ligand_groups(
     raise ValueError(f"unknown ligand axis {axis!r}; expected one of {LIGAND_AXES}")
 
 
+def _cluster_cache_path(name: str, keys: Sequence[str], **params: object) -> Path:
+    """Where a clustering of exactly these keys with exactly these settings lives.
+
+    Keyed on the content, not the dataset name: two splits over the same ligand
+    set at the same cutoff produce the same clustering, and the ladder contains
+    three of them. Without this, clustering the extract's 459,000 ligands would
+    run three times over, at hours apiece.
+    """
+    from leakfree_dta import paths
+
+    digest = digest_frame_keys(keys)[:16]
+    signature = digest_config({"n": len(list(keys)), **params})
+    return paths.cache_dir("clusters") / f"{name}.{digest}.{signature}.json"
+
+
 def _ligand_cluster_groups(df: pd.DataFrame, *, cutoff: float) -> pd.Series:
     from leakfree_dta.chem.fingerprints import ecfp_bitvects
     from leakfree_dta.chem.similarity import cluster_ligands
+    from leakfree_dta.utils.io import read_json, write_json
 
-    # Sorting by InChIKey makes sphere exclusion order-independent, so the split
+    # Sorting by InChIKey makes the clustering order-independent, so the split
     # does not depend on how the dataset table happened to be assembled.
     unique = (
         df[[schema.LIGAND_KEY, schema.SMILES]]
@@ -83,11 +101,29 @@ def _ligand_cluster_groups(df: pd.DataFrame, *, cutoff: float) -> pd.Series:
         .sort_values(schema.LIGAND_KEY)
         .reset_index(drop=True)
     )
-    logger.info("clustering %d ligands at Tanimoto distance %.2f", len(unique), cutoff)
-    labels = cluster_ligands(ecfp_bitvects(unique[schema.SMILES]), cutoff=cutoff)
-    mapping = {
-        key: f"lc{label}" for key, label in zip(unique[schema.LIGAND_KEY], labels, strict=True)
-    }
+    keys = unique[schema.LIGAND_KEY].astype(str).tolist()
+    cache = _cluster_cache_path("ligand", keys, cutoff=cutoff)
+
+    if cache.exists():
+        mapping = read_json(cache)
+        logger.info("reusing cached ligand clustering from %s", cache.name)
+    else:
+        logger.info(
+            "clustering %d ligands at Tanimoto distance %.2f (cache miss; this is the "
+            "slow step, and the result is reused by every split at this cutoff)",
+            len(unique),
+            cutoff,
+        )
+        labels = cluster_ligands(ecfp_bitvects(unique[schema.SMILES]), cutoff=cutoff)
+        mapping = {key: f"lc{label}" for key, label in zip(keys, labels, strict=True)}
+        write_json(mapping, cache)
+        logger.info(
+            "cached %d ligands in %d clusters to %s",
+            len(mapping),
+            len(set(mapping.values())),
+            cache.name,
+        )
+
     return df[schema.LIGAND_KEY].map(mapping).fillna("unknown").astype(str).rename("ligand_group")
 
 
@@ -126,6 +162,7 @@ def protein_groups(
 
 def _protein_cluster_groups(df: pd.DataFrame, *, identity: float) -> pd.Series:
     from leakfree_dta.prot.identity import cluster_proteins
+    from leakfree_dta.utils.io import read_json, write_json
 
     sequences: Mapping[str, str] = (
         df.drop_duplicates(subset=[schema.TARGET_KEY])
@@ -133,8 +170,21 @@ def _protein_cluster_groups(df: pd.DataFrame, *, identity: float) -> pd.Series:
         .dropna()
         .to_dict()
     )
-    result = cluster_proteins(sequences, min_seq_id=identity)
-    mapping = {key: f"pc{label}" for key, label in result.labels.items()}
+    cache = _cluster_cache_path("protein", sorted(sequences), identity=identity)
+    if cache.exists():
+        mapping = read_json(cache)
+        logger.info("reusing cached protein clustering from %s", cache.name)
+    else:
+        result = cluster_proteins(sequences, min_seq_id=identity)
+        mapping = {key: f"pc{label}" for key, label in result.labels.items()}
+        write_json(mapping, cache)
+        logger.info(
+            "cached %d targets in %d clusters to %s",
+            len(mapping),
+            len(set(mapping.values())),
+            cache.name,
+        )
+
     groups = df[schema.TARGET_KEY].map(mapping)
 
     # A target with no sequence cannot be clustered. Giving it its own group is the
