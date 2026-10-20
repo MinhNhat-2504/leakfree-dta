@@ -47,3 +47,7 @@ desktop.ini
 # Large source documents
 *.pdf
 !paper/**/*.pdf
+
+# Cloned external repositories and their workspaces. Large, and reconstructable
+# from the pinned commit recorded in each run's provenance.
+data/external/**/repo/

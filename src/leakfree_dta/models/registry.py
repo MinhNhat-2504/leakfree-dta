@@ -46,12 +46,16 @@ def _register_deep_models() -> None:
     except ImportError:
         return
 
+    from leakfree_dta.models.deepdta import DeepDTAModel
     from leakfree_dta.models.robust.group_dro import ERMModel, GroupDROModel
     from leakfree_dta.models.robust.shift_robust import ShiftRobustDTA
 
     MODELS["erm_mlp"] = ERMModel
     MODELS["group_dro_mlp"] = GroupDROModel
     MODELS["shift_robust"] = ShiftRobustDTA
+    # A reimplementation, not the published code. The name carries the suffix so
+    # that no results table can present it as a re-run of the original.
+    MODELS["deepdta_reimpl"] = DeepDTAModel
 
 
 _register_deep_models()
