@@ -269,3 +269,81 @@ class TestProteinIdentityBackends:
             result = backend(shared, references)
             assert result["SAME"][1] == pytest.approx(1.0), f"{backend.__name__} gave a self-match below 1.0"
             assert result["SAME"][0] == "SAME"
+
+
+class TestChemblProteinClassPaths:
+    """Family assignment against real ChEMBL protein_classification paths.
+
+    These strings are what `sql/chembl_activities.sql` produces, and the test
+    exists because an earlier version of that query produced something else. It
+    selected one level of the classification hierarchy with a COALESCE over the
+    ancestors, which returns the *most generic* name -- "Enzyme" for a kinase,
+    "Membrane receptor" for a GPCR. Neither contains a word the regexes look for,
+    so nearly every target would have fallen through to the sequence-motif
+    heuristic and then been dropped as unassigned, and the three-family extract
+    would have come out close to empty after a multi-hour download.
+
+    Pinning the paths here means a change to either the query or the regexes has
+    to confront the other.
+    """
+
+    IN_SCOPE = (
+        ("Enzyme/Kinase/Protein Kinase", "kinase"),
+        (
+            "Enzyme/Kinase/Protein Kinase/TK protein kinase group/"
+            "Tyrosine protein kinase EGFR family",
+            "kinase",
+        ),
+        ("Enzyme/Kinase/Protein Kinase/CMGC protein kinase group", "kinase"),
+        ("Membrane receptor/Family A G protein-coupled receptor", "gpcr"),
+        (
+            "Membrane receptor/Family A G protein-coupled receptor/"
+            "Small molecule receptor (family A GPCR)/Monoamine receptor",
+            "gpcr",
+        ),
+        ("Membrane receptor/Family B G protein-coupled receptor", "gpcr"),
+        ("Enzyme/Protease/Serine protease", "protease"),
+        ("Enzyme/Protease/Serine protease/Serine protease SC clan", "protease"),
+        ("Enzyme/Protease/Metallo protease", "protease"),
+        ("Enzyme/Protease/Cysteine protease", "protease"),
+        ("Enzyme/Protease/Aspartic protease", "protease"),
+    )
+
+    OUT_OF_SCOPE = (
+        "Enzyme/Oxidoreductase/Cytochrome P450",
+        "Transcription factor/Nuclear receptor",
+        "Ion channel/Voltage-gated ion channel",
+        "Transporter/Electrochemical transporter",
+    )
+
+    @pytest.mark.parametrize(("path", "expected"), IN_SCOPE)
+    def test_in_scope_paths_are_assigned(self, path, expected):
+        from leakfree_dta.prot.families import assign_family
+
+        result = assign_family(target_key="X", protein_class=path)
+        assert result.family == expected, f"{path!r} -> {result.family!r}, expected {expected!r}"
+        assert result.confidence == "database", (
+            "assignment fell back below the database annotation, which means the "
+            "classification path is not being matched"
+        )
+
+    @pytest.mark.parametrize("path", OUT_OF_SCOPE)
+    def test_out_of_scope_paths_are_not_claimed(self, path):
+        from leakfree_dta.prot.families import assign_family
+
+        result = assign_family(target_key="X", protein_class=path)
+        assert result.family == "unassigned", (
+            f"{path!r} was claimed as {result.family!r}; the scope filter is too loose"
+        )
+
+    def test_a_bare_top_level_class_is_not_enough(self):
+        """The symptom the old query produced, pinned so it cannot return quietly."""
+        from leakfree_dta.prot.families import assign_family
+
+        for generic in ("Enzyme", "Membrane receptor"):
+            result = assign_family(target_key="X", protein_class=generic)
+            assert result.family == "unassigned", (
+                f"{generic!r} was assigned to {result.family!r}. A top-level class "
+                "carries no family information, and treating it as if it does would "
+                "hide a broken extraction query."
+            )

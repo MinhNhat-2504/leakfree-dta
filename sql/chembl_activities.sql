@@ -43,10 +43,25 @@ SELECT
     docs.year                         AS document_year,
     docs.doi                          AS doi,
     docs.pubmed_id                    AS pubmed_id,
-    -- The deepest classification level available, as a '/'-joined path. The
-    -- family assignment regexes in prot/families.py match against this.
-    COALESCE(pc5.pref_name, pc4.pref_name, pc3.pref_name, pc2.pref_name, pc1.pref_name)
-                                      AS target_protein_class
+    -- The full classification path, root first, as in
+    -- "Enzyme/Kinase/Protein Kinase/TK protein kinase group".
+    --
+    -- The whole path, not one level of it. component_class links to the most
+    -- specific class and pc2..pc5 walk up through its ancestors, so a COALESCE
+    -- over them returns whichever ancestor happens to be highest -- "Enzyme" for
+    -- a kinase, "Membrane receptor" for a GPCR. The family regexes in
+    -- prot/families.py look for "kinase", "protease" and "7tm", none of which
+    -- appear at that level, so almost every target would have fallen through to
+    -- the sequence-motif heuristic and then been dropped as unassigned.
+    -- Concatenating the path lets a regex match whichever level carries the word.
+    TRIM(
+        COALESCE(pc5.pref_name || '/', '') ||
+        COALESCE(pc4.pref_name || '/', '') ||
+        COALESCE(pc3.pref_name || '/', '') ||
+        COALESCE(pc2.pref_name || '/', '') ||
+        COALESCE(pc1.pref_name, ''),
+        '/'
+    )                                 AS target_protein_class
 FROM activities              AS act
 JOIN assays                  AS a     ON a.assay_id          = act.assay_id
 JOIN target_dictionary       AS td    ON td.tid              = a.tid
