@@ -154,6 +154,149 @@ def cluster_proteins(
     return ClusterResult(labels, min_seq_id, backend, n_clusters)
 
 
+def max_identity_to_set(
+    queries: Mapping[str, str],
+    references: Mapping[str, str],
+    *,
+    sensitivity: float = 7.5,
+) -> dict[str, tuple[str | None, float]]:
+    """For each query sequence, its most similar reference and that identity.
+
+    This is the primitive behind the cross-split protein-overlap check, and it is
+    the one place where the choice of backend decides whether the audit is
+    runnable at all. Pairwise Smith-Waterman costs about 0.3 s for a pair of
+    400-residue proteins, so a 1500-by-1500 comparison is on the order of a
+    hundred hours. ``mmseqs easy-search`` does the same job in seconds.
+
+    ``sensitivity`` is passed to MMseqs2 as ``-s``. The default is deliberately
+    high: the audit is looking for the *most* similar training protein, and a fast
+    prefilter that misses a remote match would understate leakage, which is the
+    direction an audit must not err in.
+
+    Identity is reported on the same basis as :func:`local_identity` -- matched
+    residues over the length of the shorter sequence -- so the two backends'
+    numbers mean the same thing and a threshold does not shift when the backend
+    changes.
+    """
+    cleaned_queries = {key: clean_sequence(value) for key, value in queries.items() if value}
+    cleaned_references = {key: clean_sequence(value) for key, value in references.items() if value}
+    if not cleaned_queries or not cleaned_references:
+        return {key: (None, 0.0) for key in queries}
+
+    binary = mmseqs_binary()
+    if binary is None:
+        logger.warning(
+            "MMseqs2 unavailable; falling back to pairwise Smith-Waterman for %d x %d "
+            "sequences. This is roughly %.0f hours of work -- install MMseqs2.",
+            len(cleaned_queries),
+            len(cleaned_references),
+            len(cleaned_queries) * len(cleaned_references) * 0.3 / 3600,
+        )
+        return _max_identity_pairwise(cleaned_queries, cleaned_references)
+
+    try:
+        return _max_identity_mmseqs(binary, cleaned_queries, cleaned_references, sensitivity)
+    except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
+        logger.warning("MMseqs2 search failed (%s); falling back to pairwise alignment", exc)
+        return _max_identity_pairwise(cleaned_queries, cleaned_references)
+
+
+def _max_identity_mmseqs(
+    binary: str,
+    queries: Mapping[str, str],
+    references: Mapping[str, str],
+    sensitivity: float,
+) -> dict[str, tuple[str | None, float]]:
+    """All-against-all search with ``mmseqs easy-search``."""
+    best: dict[str, tuple[str | None, float]] = {key: (None, 0.0) for key in queries}
+
+    # A key present in both sets is the same protein on both sides of the
+    # boundary -- the most direct protein-axis leakage there is, and the reason
+    # the transductive splits report 100% here. It is seeded rather than left to
+    # the search, which would otherwise have to rediscover a self-match and might
+    # report it below 1.0 after alignment trimming.
+    for key in queries:
+        if key in references:
+            best[key] = (key, 1.0)
+
+    with tempfile.TemporaryDirectory(prefix="leakfree_search_") as tmp:
+        tmpdir = Path(tmp)
+        query_fasta = write_fasta(dict(queries), tmpdir / "query.fasta")
+        target_fasta = write_fasta(dict(references), tmpdir / "target.fasta")
+        result = tmpdir / "result.m8"
+
+        command = [
+            binary,
+            "easy-search",
+            str(query_fasta),
+            str(target_fasta),
+            str(result),
+            str(tmpdir / "work"),
+            "-s",
+            str(sensitivity),
+            # Keep every hit above a low floor: the audit wants the maximum, and
+            # a default e-value cutoff would silently drop remote homologues.
+            "-e",
+            "10000",
+            "--max-seqs",
+            "1000",
+            "--format-output",
+            "query,target,fident,alnlen,qlen,tlen",
+            "-v",
+            "1",
+        ]
+        logger.info(
+            "mmseqs easy-search: %d queries against %d references", len(queries), len(references)
+        )
+        subprocess.run(command, check=True, capture_output=True, text=True)
+
+        if not result.exists():
+            raise RuntimeError("easy-search produced no result table")
+
+        with result.open(encoding="utf-8") as handle:
+            for line in handle:
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) < 6:
+                    continue
+                query, target = fields[0], fields[1]
+                try:
+                    fident, alnlen, qlen, tlen = (
+                        float(fields[2]),
+                        int(fields[3]),
+                        int(fields[4]),
+                        int(fields[5]),
+                    )
+                except ValueError:
+                    continue
+                # fident is identity within the alignment; rescale onto the
+                # shorter full sequence so it matches local_identity's basis.
+                shorter = min(qlen, tlen)
+                identity = (fident * alnlen / shorter) if shorter else 0.0
+                identity = min(identity, 1.0)
+                if identity > best.get(query, (None, 0.0))[1]:
+                    best[query] = (target, identity)
+
+    return best
+
+
+def _max_identity_pairwise(
+    queries: Mapping[str, str], references: Mapping[str, str]
+) -> dict[str, tuple[str | None, float]]:
+    """The exact but quadratic fallback."""
+    best: dict[str, tuple[str | None, float]] = {}
+    for query_key, query_sequence in queries.items():
+        top_key, top_identity = None, 0.0
+        for reference_key, reference_sequence in references.items():
+            if reference_key == query_key:
+                top_key, top_identity = reference_key, 1.0
+                break
+            value = local_identity(query_sequence, reference_sequence)
+            if value > top_identity:
+                top_key, top_identity = reference_key, value
+        best[query_key] = (top_key, top_identity)
+    return best
+
+
 # --- MMseqs2 path -----------------------------------------------------------
 
 

@@ -199,3 +199,73 @@ class TestFixtureIntegrity:
             f"planted paralogues are only {np.min(identities):.0%} identical; "
             "the protein channel is not being exercised"
         )
+
+
+class TestProteinIdentityBackends:
+    """The two identity backends must be interchangeable.
+
+    They are not an implementation detail: pairwise Smith-Waterman costs roughly
+    0.3 s per 400-residue pair, which puts an all-against-all comparison of a few
+    thousand proteins at a hundred hours or more, so every real run uses MMseqs2.
+    If the two disagreed, a threshold tuned on one would mean something different
+    on the other, and the audit's protein-axis numbers would depend on which
+    machine produced them.
+    """
+
+    @staticmethod
+    def _mutate(sequence: str, identity: float, rng) -> str:
+        residues = np.array(list("ACDEFGHIKLMNPQRSTVWY"))
+        chars = list(sequence)
+        for position in rng.choice(len(chars), round((1 - identity) * len(chars)), replace=False):
+            chars[position] = str(rng.choice(residues))
+        return "".join(chars)
+
+    def test_backends_agree_on_planted_identities(self):
+        from leakfree_dta.prot.identity import (
+            _max_identity_pairwise,
+            identity_backend,
+            max_identity_to_set,
+        )
+
+        if identity_backend() != "mmseqs2":
+            pytest.skip("MMseqs2 not installed; there is only one backend to compare")
+
+        rng = np.random.default_rng(0)
+        residues = np.array(list("ACDEFGHIKLMNPQRSTVWY"))
+        references = {f"T{i}": "".join(rng.choice(residues, 400)) for i in range(25)}
+        planted = {0.95: "P95", 0.80: "P80", 0.60: "P60"}
+        queries = {
+            name: self._mutate(references["T0"], identity, rng)
+            for identity, name in planted.items()
+        }
+
+        fast = max_identity_to_set(queries, references)
+        exact = _max_identity_pairwise(queries, references)
+
+        for identity, name in planted.items():
+            assert fast[name][1] == pytest.approx(identity, abs=0.08), (
+                f"MMseqs2 reported {fast[name][1]:.3f} for a planted {identity:.2f}"
+            )
+            assert fast[name][1] == pytest.approx(exact[name][1], abs=0.05), (
+                f"backends disagree on {name}: mmseqs2 {fast[name][1]:.3f}, "
+                f"pairwise {exact[name][1]:.3f}"
+            )
+
+    def test_a_target_on_both_sides_scores_one(self):
+        """The same accession in train and test is total leakage, not a near miss.
+
+        Alignment trimming can report a self-match slightly below 1.0, which would
+        quietly drop transductive splits under a 1.0 threshold. The identical key
+        is therefore seeded rather than left to the search.
+        """
+        from leakfree_dta.prot.identity import _max_identity_pairwise, max_identity_to_set
+
+        rng = np.random.default_rng(1)
+        residues = np.array(list("ACDEFGHIKLMNPQRSTVWY"))
+        shared = {"SAME": "".join(rng.choice(residues, 300))}
+        references = {**shared, "OTHER": "".join(rng.choice(residues, 300))}
+
+        for backend in (max_identity_to_set, _max_identity_pairwise):
+            result = backend(shared, references)
+            assert result["SAME"][1] == pytest.approx(1.0), f"{backend.__name__} gave a self-match below 1.0"
+            assert result["SAME"][0] == "SAME"

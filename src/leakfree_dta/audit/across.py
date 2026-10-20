@@ -222,19 +222,42 @@ def check_near_duplicate_pair_overlap(
             reason="train and test share no target, so no pair can be recovered",
         )
 
+    # Fingerprint every distinct ligand once, up front. The comparison below is
+    # per target, and a ChEMBL-scale benchmark has each ligand measured against
+    # dozens of them, so fingerprinting inside the loop would repeat the most
+    # expensive step dozens of times over.
+    everything = pd.concat([train, test], ignore_index=True)
+    unique_ligands = everything.drop_duplicates(subset=[schema.LIGAND_KEY])
+    fingerprint = dict(
+        zip(
+            unique_ligands[schema.LIGAND_KEY],
+            ecfp_bitvects(unique_ligands[schema.SMILES]),
+            strict=True,
+        )
+    )
+    logger.info(
+        "near-duplicate pair check: %d ligands fingerprinted, %d shared targets",
+        len(fingerprint),
+        len(shared_targets),
+    )
+
+    # Grouping once beats filtering the frame per target, which is a full scan each.
+    train_by_target = dict(tuple(train.groupby(schema.TARGET_KEY, observed=True)))
+    test_by_target = dict(tuple(test.groupby(schema.TARGET_KEY, observed=True)))
+
     affected_rows: list[str] = []
     lookup_errors: list[float] = []
     records: list[dict[str, object]] = []
 
     # Per target, so similarity is only ever compared within the same protein.
     for target in shared_targets:
-        train_rows = train[train[schema.TARGET_KEY] == target]
-        test_rows = test[test[schema.TARGET_KEY] == target]
-        if not len(train_rows) or not len(test_rows):
+        train_rows = train_by_target.get(target)
+        test_rows = test_by_target.get(target)
+        if train_rows is None or test_rows is None or not len(train_rows) or not len(test_rows):
             continue
 
-        reference = ecfp_bitvects(train_rows[schema.SMILES])
-        query = ecfp_bitvects(test_rows[schema.SMILES])
+        reference = [fingerprint.get(key) for key in train_rows[schema.LIGAND_KEY]]
+        query = [fingerprint.get(key) for key in test_rows[schema.LIGAND_KEY]]
         neighbors = nearest_neighbor(query, reference)
         flagged = neighbors.above(threshold)
 
@@ -361,7 +384,7 @@ def check_protein_identity_overlap(
     accession means almost nothing when a 90%-identical paralogue remains in
     training.
     """
-    from leakfree_dta.prot.identity import identity_backend, local_identity
+    from leakfree_dta.prot.identity import identity_backend, max_identity_to_set
 
     train_targets = (
         train.drop_duplicates(subset=[schema.TARGET_KEY])
@@ -378,21 +401,19 @@ def check_protein_identity_overlap(
     if not train_targets or not test_targets:
         return _empty_result("protein_identity_overlap", "protein", len(test))
 
+    # Delegated rather than looped here. An all-against-all comparison of a few
+    # thousand proteins is hours of pairwise Smith-Waterman and seconds of
+    # MMseqs2; max_identity_to_set picks the backend and reports which it used.
+    best = max_identity_to_set(test_targets, train_targets)
+
     records: list[dict[str, object]] = []
-    for test_key, test_sequence in test_targets.items():
-        best_identity, best_key = 0.0, None
-        for train_key, train_sequence in train_targets.items():
-            if train_key == test_key:
-                best_identity, best_key = 1.0, train_key
-                break
-            value = local_identity(test_sequence, train_sequence)
-            if value > best_identity:
-                best_identity, best_key = value, train_key
+    for test_key in test_targets:
+        train_key, identity = best.get(test_key, (None, 0.0))
         records.append(
             {
                 schema.TARGET_KEY: test_key,
-                "nn_identity": round(best_identity, 4),
-                "nn_train_target": best_key,
+                "nn_identity": round(float(identity), 4),
+                "nn_train_target": train_key,
             }
         )
 
