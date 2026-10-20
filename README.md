@@ -129,6 +129,11 @@ leakfree demo          # the whole pipeline on synthetic data, about a minute
 ## Running it
 
 ```bash
+# 0. Fetch ChEMBL. The EBI mirror throttles per connection, so this uses parallel
+#    byte ranges; it is resumable, and the published checksum is verified.
+python scripts/download_chembl.py --out D:/chembl_dl
+python scripts/extract_chembl.py --tarball D:/chembl_dl/chembl_37_sqlite.tar.gz
+
 # 1. Curate a source into the canonical schema. Writes two tables: one with
 #    replicates (the audit needs them) and one aggregated (the models need that).
 leakfree curate --source chembl --input data/raw/chembl_3fam.parquet --dataset chembl_3fam

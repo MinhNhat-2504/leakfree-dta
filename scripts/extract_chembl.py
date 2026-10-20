@@ -4,8 +4,14 @@ Phase 1's second half. Takes the SQLite release downloaded by
 ``scripts/download_chembl.py``, runs ``sql/chembl_activities.sql``, assigns target
 families, and writes a parquet file that ``leakfree curate`` can consume.
 
+    python scripts/extract_chembl.py --tarball D:/chembl_dl/chembl_37_sqlite.tar.gz
     python scripts/extract_chembl.py --db D:/chembl_dl/chembl_37.db
     python scripts/extract_chembl.py --db ... --families kinase gpcr --limit 50000
+
+Given a ``--tarball`` the script unpacks it, runs the query, and deletes the
+unpacked database again. That is the default because the database is about 30 GB
+against roughly 50 GB free on a typical laptop, and the cleanup is the step most
+easily forgotten; ``--keep-db`` opts out.
 
 The query result is streamed in chunks rather than loaded whole: the three-family
 extract runs to roughly a million rows, which is fine in memory but needless to
@@ -21,8 +27,10 @@ records which release produced it.
 from __future__ import annotations
 
 import argparse
+import shutil
 import sqlite3
 import sys
+import tarfile
 import time
 from pathlib import Path
 
@@ -38,6 +46,43 @@ logger = get_logger(__name__)
 
 SQL_FILE = Path(__file__).resolve().parents[1] / "sql" / "chembl_activities.sql"
 CHUNK_ROWS = 200_000
+
+
+def unpack_release(tarball: Path) -> tuple[Path, Path]:
+    """Unpack the SQLite release and return ``(database, unpacked root)``.
+
+    Checks free space first. The archive is about 5.8 GB and unpacks to roughly
+    30 GB, so on a disk with 50-odd GB free there is no margin for discovering
+    the problem halfway through: a part-written database fails the query in a way
+    that looks like a schema problem rather than a full disk.
+    """
+    if not tarball.is_file():
+        raise SystemExit(f"no archive at {tarball}")
+
+    needed = 32 * 1024**3
+    free = shutil.disk_usage(tarball.parent).free
+    if free < needed:
+        raise SystemExit(
+            f"{free / 1e9:.0f} GB free at {tarball.parent}, and unpacking needs about "
+            f"{needed / 1e9:.0f} GB. Free some space or unpack elsewhere."
+        )
+
+    destination = tarball.parent / tarball.name.replace(".tar.gz", "")
+    if destination.exists():
+        logger.info("reusing the existing unpacked tree at %s", destination)
+    else:
+        logger.info("unpacking %s (this takes several minutes)", tarball.name)
+        with tarfile.open(tarball, "r:gz") as archive:
+            # filter="data" refuses absolute paths and traversal entries. The
+            # archive is from EBI, but it is still downloaded input.
+            archive.extractall(destination, filter="data")
+
+    candidates = sorted(destination.rglob("*.db"))
+    if not candidates:
+        raise SystemExit(f"no .db file found under {destination}")
+    database = max(candidates, key=lambda path: path.stat().st_size)
+    logger.info("using %s (%.1f GB)", database.name, database.stat().st_size / 1e9)
+    return database, destination
 
 
 def release_version(connection: sqlite3.Connection) -> str:
@@ -176,20 +221,44 @@ def summarise(frame: pd.DataFrame) -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", required=True, help="path to chembl_NN.db")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--db", help="path to an already-extracted chembl_NN.db")
+    source.add_argument(
+        "--tarball",
+        help="path to chembl_NN_sqlite.tar.gz; it is unpacked, queried, and the "
+        "unpacked database deleted again unless --keep-db is given",
+    )
     parser.add_argument("--dataset", default="chembl_3fam")
     parser.add_argument("--families", nargs="*", default=["kinase", "gpcr", "protease"])
     parser.add_argument("--limit", type=int, default=None, help="cap rows, for a trial run")
+    parser.add_argument(
+        "--keep-db",
+        action="store_true",
+        help="with --tarball, keep the ~30 GB unpacked database afterwards",
+    )
     args = parser.parse_args()
 
     setup_logging("INFO")
     paths.ensure_dirs()
 
-    db_path = Path(args.db)
+    unpacked_root: Path | None = None
+    if args.tarball:
+        db_path, unpacked_root = unpack_release(Path(args.tarball))
+    else:
+        db_path = Path(args.db)
     if not db_path.is_file():
         raise SystemExit(f"no database at {db_path}")
 
-    frame, metadata = run_extraction(db_path, args.limit)
+    try:
+        frame, metadata = run_extraction(db_path, args.limit)
+    finally:
+        if unpacked_root is not None and not args.keep_db:
+            # Deleted in a finally block on purpose. The unpacked database is
+            # about 30 GB against roughly 50 GB free; leaving it behind after a
+            # failed query is how the next run dies with no disk space and no
+            # obvious cause.
+            logger.info("removing the unpacked database (%s)", unpacked_root)
+            shutil.rmtree(unpacked_root, ignore_errors=True)
     frame = assign_families(frame, tuple(args.families))
 
     if frame.empty:
