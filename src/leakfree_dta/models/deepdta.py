@@ -163,11 +163,18 @@ class DeepDTAModel(DTAModel):
 
     # --- encoding -----------------------------------------------------------
 
-    def _encode_frame(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-        """Encode once per distinct ligand and target, then index.
+    def _encode_frame(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Encode each distinct ligand and target once, and return index arrays.
 
-        A benchmark repeats the same ligand across many targets, so encoding per
-        row would do the same work hundreds of times.
+        Returns ``(drug_codes, drug_index, protein_codes, protein_index)``, where
+        the code arrays hold one row per *distinct* molecule or protein and the
+        index arrays map dataset rows onto them.
+
+        Materialising one encoded protein per row is the obvious implementation
+        and does not fit: at 1,000 residues in int64, the 509,988-row training
+        fold is 4.08 GB for the protein side alone, against 7.2 MB for the 905
+        distinct sequences plus 2 MB of indices. The batches gather from the
+        small arrays instead, which also keeps the host-to-device copy small.
         """
         ligands = df[[schema.LIGAND_KEY, schema.SMILES]].drop_duplicates(subset=[schema.LIGAND_KEY])
         targets = df[[schema.TARGET_KEY, schema.TARGET_SEQUENCE]].drop_duplicates(
@@ -175,17 +182,22 @@ class DeepDTAModel(DTAModel):
         )
 
         drug_codes = np.vstack(
-            [_encode(str(s), CHARISOSMISET, MAX_SMILES_LEN) for s in ligands[schema.SMILES]]
+            [_encode(str(value), CHARISOSMISET, MAX_SMILES_LEN) for value in ligands[schema.SMILES]]
         )
         protein_codes = np.vstack(
-            [_encode(str(s), CHARPROTSET, MAX_PROTEIN_LEN) for s in targets[schema.TARGET_SEQUENCE]]
+            [
+                _encode(str(value), CHARPROTSET, MAX_PROTEIN_LEN)
+                for value in targets[schema.TARGET_SEQUENCE]
+            ]
         )
 
-        drug_index = {key: i for i, key in enumerate(ligands[schema.LIGAND_KEY])}
-        protein_index = {key: i for i, key in enumerate(targets[schema.TARGET_KEY])}
+        drug_position = {key: i for i, key in enumerate(ligands[schema.LIGAND_KEY])}
+        protein_position = {key: i for i, key in enumerate(targets[schema.TARGET_KEY])}
         return (
-            drug_codes[df[schema.LIGAND_KEY].map(drug_index).to_numpy()],
-            protein_codes[df[schema.TARGET_KEY].map(protein_index).to_numpy()],
+            drug_codes,
+            df[schema.LIGAND_KEY].map(drug_position).to_numpy(dtype=np.int64),
+            protein_codes,
+            df[schema.TARGET_KEY].map(protein_position).to_numpy(dtype=np.int64),
         )
 
     # --- interface ----------------------------------------------------------
@@ -202,23 +214,28 @@ class DeepDTAModel(DTAModel):
         torch.manual_seed(config.seed)
         rng = np.random.default_rng(config.seed)
 
-        drug, protein = self._encode_frame(train)
+        drug_codes, drug_index, protein_codes, protein_index = self._encode_frame(train)
         y = self.targets(train)
 
         model = _build_network(torch, nn, config).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
         loss_fn = nn.MSELoss()
 
-        drug_t = torch.tensor(drug, device=device)
-        protein_t = torch.tensor(protein, device=device)
+        # The code tables live on the device; the indices select rows per batch.
+        drug_table = torch.tensor(drug_codes, device=device)
+        protein_table = torch.tensor(protein_codes, device=device)
+        drug_idx = torch.tensor(drug_index, device=device)
+        protein_idx = torch.tensor(protein_index, device=device)
         y_t = torch.tensor(y, dtype=torch.float32, device=device)
 
         valid_tensors = None
         if valid is not None and len(valid) >= 10:
-            valid_drug, valid_protein = self._encode_frame(valid)
+            v_dc, v_di, v_pc, v_pi = self._encode_frame(valid)
             valid_tensors = (
-                torch.tensor(valid_drug, device=device),
-                torch.tensor(valid_protein, device=device),
+                torch.tensor(v_dc, device=device),
+                torch.tensor(v_di, device=device),
+                torch.tensor(v_pc, device=device),
+                torch.tensor(v_pi, device=device),
                 torch.tensor(self.targets(valid), dtype=torch.float32, device=device),
             )
 
@@ -242,7 +259,11 @@ class DeepDTAModel(DTAModel):
             for start in range(0, n, batch_size):
                 batch = order[start : start + batch_size]
                 optimizer.zero_grad(set_to_none=True)
-                loss = loss_fn(model(drug_t[batch], protein_t[batch]), y_t[batch])
+                rows = torch.as_tensor(batch, device=device)
+                loss = loss_fn(
+                    model(drug_table[drug_idx[rows]], protein_table[protein_idx[rows]]),
+                    y_t[rows],
+                )
                 loss.backward()
                 optimizer.step()
                 total += float(loss.item()) * len(batch)
@@ -252,9 +273,15 @@ class DeepDTAModel(DTAModel):
             if valid_tensors is not None:
                 model.eval()
                 with torch.no_grad():
-                    predicted = model(valid_tensors[0], valid_tensors[1])
+                    v_dc, v_di, v_pc, v_pi, v_y = valid_tensors
+                    chunks = []
+                    for start in range(0, len(v_y), 4096):
+                        stop = start + 4096
+                        chunks.append(
+                            model(v_dc[v_di[start:stop]], v_pc[v_pi[start:stop]])
+                        )
                     record["valid_rmse"] = float(
-                        torch.sqrt(loss_fn(predicted, valid_tensors[2])).item()
+                        torch.sqrt(loss_fn(torch.cat(chunks), v_y)).item()
                     )
                 score = record["valid_rmse"]
             history.append(record)
@@ -289,15 +316,20 @@ class DeepDTAModel(DTAModel):
         self.check_fitted(self)
         import torch
 
-        drug, protein = self._encode_frame(test)
+        drug_codes, drug_index, protein_codes, protein_index = self._encode_frame(test)
+        drug_table = torch.tensor(drug_codes, device=self._device)
+        protein_table = torch.tensor(protein_codes, device=self._device)
+        drug_idx = torch.tensor(drug_index, device=self._device)
+        protein_idx = torch.tensor(protein_index, device=self._device)
+
         outputs: list[np.ndarray] = []
         with torch.no_grad():
-            for start in range(0, len(test), 1024):
-                stop = start + 1024
+            for start in range(0, len(test), 4096):
+                stop = start + 4096
                 outputs.append(
                     self._model(
-                        torch.tensor(drug[start:stop], device=self._device),
-                        torch.tensor(protein[start:stop], device=self._device),
+                        drug_table[drug_idx[start:stop]],
+                        protein_table[protein_idx[start:stop]],
                     )
                     .cpu()
                     .numpy()

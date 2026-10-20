@@ -234,7 +234,24 @@ def cmd_train(args: argparse.Namespace) -> int:
         len(test),
     )
 
-    model = build_model(args.model)
+    # Feature size is a memory decision at this scale, so it is explicit rather
+    # than hidden in a default. ECFP4-2048 with dipeptide protein features over
+    # 510,000 training rows is a 5 GB dense matrix; 1024 bits with amino-acid
+    # composition is 2.1 GB. The models that take features read these; the
+    # degenerate predictors ignore them.
+    from leakfree_dta.models.features import FeatureSpec
+
+    spec = FeatureSpec(
+        ligand=args.ligand_features,
+        protein=args.protein_features,
+        n_bits=args.n_bits,
+    )
+    try:
+        model = build_model(args.model, feature_spec=spec)
+    except TypeError:
+        # The degenerate predictors take no feature spec.
+        model = build_model(args.model)
+    logger.info("model %s with features %s", args.model, spec.describe())
     fit_result = model.fit(train, valid if len(valid) else None)
     prediction = model.predict(test)
 
@@ -688,6 +705,22 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--dataset", required=True)
     train_parser.add_argument("--split", required=True)
     train_parser.add_argument("--model", required=True)
+    train_parser.add_argument(
+        "--n-bits",
+        type=int,
+        default=1024,
+        help="ECFP bit length (default 1024; 2048 needs ~5 GB on the full extract)",
+    )
+    train_parser.add_argument(
+        "--ligand-features",
+        default="ecfp4",
+        choices=["ecfp4", "ecfp6", "descriptors", "ecfp4+descriptors"],
+    )
+    train_parser.add_argument(
+        "--protein-features",
+        default="composition",
+        choices=["composition", "dipeptide", "esm", "none"],
+    )
     train_parser.set_defaults(func=cmd_train)
 
     # evaluate
