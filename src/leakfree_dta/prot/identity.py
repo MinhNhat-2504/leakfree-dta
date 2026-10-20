@@ -34,6 +34,11 @@ from leakfree_dta.prot.sequences import clean_sequence, write_fasta
 
 logger = get_logger(__name__)
 
+#: Alignment coverage required for two sequences to cluster. 0.50 rather than
+#: MMseqs2's conventional 0.80; see cluster_proteins for the measurement behind
+#: that choice. Named so the split cache can key on it.
+DEFAULT_CLUSTER_COVERAGE = 0.50
+
 KMER_SIZE = 5
 #: k-mer Jaccard below this cannot reach 30% identity, so exact alignment is skipped.
 KMER_PREFILTER = 0.02
@@ -114,15 +119,31 @@ def cluster_proteins(
     sequences: Mapping[str, str],
     *,
     min_seq_id: float = 0.30,
-    coverage: float = 0.80,
+    coverage: float = DEFAULT_CLUSTER_COVERAGE,
     force_backend: str | None = None,
 ) -> ClusterResult:
     """Cluster targets so that no two clusters share more than ``min_seq_id``.
 
     The paper reports splits at 30% and 50% identity. 30% is roughly the limit
     below which fold similarity stops being detectable from sequence alone; 50% is
-    the stricter setting that also separates close paralogues, which matters
-    inside the kinase family where ATP-site conservation is high.
+    the stricter setting that also separates close paralogues.
+
+    ``coverage`` defaults to 0.50, not to MMseqs2's conventional 0.80, and the
+    difference decides whether a "protein-cold" split is one. Under
+    ``--cov-mode 0`` the alignment must span that fraction of *both* sequences,
+    so a pair that is highly similar over a shared catalytic domain but differs
+    in length fails the coverage test and lands in separate clusters however
+    similar it is.
+
+    Measured on the ChEMBL 37 target set at 0.80 coverage: casein kinase 1 alpha
+    (P48729, 337 aa) and delta (P48730, 415 aa) are 67% identical and were put in
+    different clusters, as were ERK3 and ERK4 at 51%. The resulting split left
+    22% of kinase test rows with a training protein above 40% identity.
+
+    For leakage the question is whether a model can transfer from one protein to
+    the other, and a shared catalytic domain at 67% identity is enough for that.
+    Whether the two are globally alignable is a different question and the wrong
+    one here. At 0.50 the 905-target set goes from 424 clusters to 279.
     """
     cleaned = {key: clean_sequence(value) for key, value in sequences.items() if value}
     if not cleaned:

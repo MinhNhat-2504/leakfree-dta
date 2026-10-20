@@ -170,7 +170,14 @@ def _protein_cluster_groups(df: pd.DataFrame, *, identity: float) -> pd.Series:
         .dropna()
         .to_dict()
     )
-    cache = _cluster_cache_path("protein", sorted(sequences), identity=identity)
+    # Coverage belongs in the key. It changes the clustering substantially -- 424
+    # clusters against 279 on this target set -- so leaving it out serves a stale
+    # clustering the moment the default moves, which is what happened once.
+    from leakfree_dta.prot.identity import DEFAULT_CLUSTER_COVERAGE
+
+    cache = _cluster_cache_path(
+        "protein", sorted(sequences), identity=identity, coverage=DEFAULT_CLUSTER_COVERAGE
+    )
     if cache.exists():
         mapping = read_json(cache)
         logger.info("reusing cached protein clustering from %s", cache.name)

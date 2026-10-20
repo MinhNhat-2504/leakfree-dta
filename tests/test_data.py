@@ -418,3 +418,85 @@ class TestSequenceHeuristicIsOffByDefault:
             f"the rule fires on {rate:.1%} of random sequences. It was 0.4% when the "
             "71% real-world error rate was measured; if this has changed, re-measure."
         )
+
+
+class TestCloseParaloguesAreDetectable:
+    """The protein-overlap check must see close paralogues. It is what it is for.
+
+    Background, found on ChEMBL 37 rather than constructed. Casein kinase 1 alpha
+    (P48729, 337 aa) and delta (P48730, 415 aa) are 67% identical; ERK3 and ERK4
+    are 51%. Clustering the 905-target set at 30% identity with MMseqs2's
+    conventional ``-c 0.8`` placed each pair in *different* clusters, because
+    ``--cov-mode 0`` requires the alignment to span 80% of both sequences and
+    these pairs differ in length. The resulting "protein-cold" split left 22% of
+    kinase test rows with a training protein above 40% identity. Lowering the
+    default coverage to 0.5 merges them on the full set.
+
+    What is asserted here is the pairwise identity, not the clustering. MMseqs2's
+    clustering is set-dependent: the same pair merges in the 905-target run and
+    does not in a 12-sequence fixture, because the prefilter and e-value
+    statistics depend on the database. A fixture-sized clustering test would
+    therefore pin something that is not what happens in the pipeline. The
+    clustering behaviour is reported in the paper from the full-set measurement;
+    what belongs in a unit test is that these proteins really are similar and
+    that the audit can see it.
+    """
+
+    PARALOGUES = (
+        ("P48729", "P48730", "casein kinase 1 alpha / delta", 0.60),
+        ("Q16659", "P31152", "ERK3 / ERK4", 0.45),
+    )
+
+    @pytest.fixture(scope="class")
+    def sequences(self) -> dict[str, str]:
+        from pathlib import Path
+
+        from leakfree_dta.prot.sequences import parse_fasta
+
+        path = Path(__file__).parent / "fixtures" / "paralogues.fasta"
+        return parse_fasta(path.read_text(encoding="utf-8"))
+
+    @pytest.mark.parametrize(("left", "right", "label", "floor"), PARALOGUES)
+    def test_identity_is_measured_as_high(self, sequences, left, right, label, floor):
+        from leakfree_dta.prot.identity import max_identity_to_set
+
+        assert left in sequences and right in sequences, "fixture is missing a sequence"
+        best = max_identity_to_set({left: sequences[left]}, {right: sequences[right]})
+        identity = best[left][1]
+        assert identity >= floor, (
+            f"{label} measured at {identity:.0%} identity, below the {floor:.0%} this "
+            "pair is known to reach. Either the sequences or the identity definition "
+            "has changed."
+        )
+
+    def test_the_audit_flags_a_paralogue_across_the_boundary(self, sequences):
+        """End to end: a split separating a paralogue pair must be reported as leaking."""
+        import pandas as pd
+
+        from leakfree_dta.audit.across import check_protein_identity_overlap
+        from leakfree_dta.data import schema
+
+        def rows(target: str, n: int, offset: int) -> pd.DataFrame:
+            return schema.finalize(
+                pd.DataFrame(
+                    {
+                        schema.LIGAND_KEY: [f"L{offset + i}" for i in range(n)],
+                        schema.SMILES: ["CCO"] * n,
+                        schema.TARGET_KEY: [target] * n,
+                        schema.TARGET_SEQUENCE: [sequences[target]] * n,
+                        schema.Y: [7.0] * n,
+                        schema.Y_TYPE: ["pKi"] * n,
+                        schema.SOURCE: ["t"] * n,
+                    }
+                )
+            )
+
+        train = rows("P48730", 30, 0)
+        test = rows("P48729", 20, 100)
+        result = check_protein_identity_overlap(train, test)
+
+        assert result.fraction == 1.0, (
+            "a test target 67% identical to the only training target was not flagged; "
+            "the protein-overlap check is not doing its job"
+        )
+        assert result.statistics["max_nn_identity"] >= 0.6
