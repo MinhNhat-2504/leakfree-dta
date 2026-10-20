@@ -20,8 +20,8 @@ how much reported performance survives when every channel is closed.
 Three findings are independent of any model. First, the labels themselves set a
 floor: across 153,598 pairs measured more than once, the pooled within-pair
 standard deviation is **0.617 log units**, and 23.5% of replicated pairs
-disagree by more than tenfold. Reported RMSEs in this literature routinely sit
-at or below that floor. Second, pooling IC50 with Ki — standard practice —
+disagree by more than tenfold. Any RMSE below that, on ChEMBL-derived data, is
+smaller than the disagreement among the labels being scored against. Second, pooling IC50 with Ki — standard practice —
 carries a systematic offset of **−0.569 log units**, measured directly on 35,957
 pairs holding both. Third, Bemis–Murcko scaffold splitting, the field's usual
 "hard" split, closes almost none of the recoverable leakage, because homologous
@@ -275,9 +275,18 @@ measurement**:
 | largest within-pair range | 6.97 log units |
 | maximum replicates for one pair | 198 |
 
-The pooled standard deviation is a floor on the RMSE any model can achieve. A
-model reporting 0.5 on a test set drawn from this data is reporting a number
-smaller than the disagreement between the labels it is scored against.
+The pooled standard deviation is a floor on the RMSE any model can achieve on
+*this* data. A model reporting 0.5 on a test set drawn from it is reporting a
+number smaller than the disagreement among the labels it is scored against.
+
+The qualifier matters and is easy to drop. 0.617 is this extract's floor, not a
+universal one; the low RMSEs often quoted in this literature are mostly on Davis
+and KIBA, which have their own noise characteristics and would need their own
+measurement. The comparison we can make is the one within this benchmark, and
+there the gap runs the other way: no model we tested comes near the floor. On
+the leakage-free split every one sits between 1.24 and 1.33, roughly double it.
+The labels are noisy and the models are further from them than the noise
+explains.
 
 Pooling affinity types onto one p-scale is standard practice and standard
 criticism. We measure its cost directly on the 35,957 pairs carrying more than
