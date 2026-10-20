@@ -129,6 +129,47 @@ class TestConformalIntegration:
         assert prediction.metadata["target_coverage"] == pytest.approx(0.9)
 
     @pytest.mark.torch
+    def test_predictions_stay_on_the_affinity_scale(self, aggregated):
+        """A regression test for a divergence that was silent in the metrics.
+
+        Most ECFP bits are constant within any one training fold, so their standard
+        deviation is exactly zero. An earlier version clamped that to 1e-6 before
+        dividing, which turned a single set bit in the test fold into a value of
+        order 1e6 and sent the network to RMSE ~9800. It showed up as a terrible
+        score rather than as an error, which is the dangerous kind of bug: on a
+        leakage-free split a reader could mistake it for the honest difficulty of
+        the task.
+
+        Affinities live on a p-scale of roughly 0 to 14. Predictions far outside
+        that are divergence, not performance.
+        """
+        pytest.importorskip("torch")
+        from leakfree_dta.models.robust.group_dro import GroupDROConfig, GroupDROModel
+
+        # The ligand-cluster split makes test compounds maximally distinct from
+        # training ones, which is exactly when unseen bits appear.
+        assignment = build_split(aggregated, SplitSpec(name="t", ligand_axis="cluster"))
+        train, valid, test = (
+            assignment.train(aggregated),
+            assignment.valid(aggregated),
+            assignment.test(aggregated),
+        )
+        if len(train) < 50 or len(test) < 20:
+            pytest.skip("fixture too small for this split")
+
+        model = GroupDROModel(
+            config=GroupDROConfig(max_epochs=6, hidden_sizes=(32,), patience=6, min_group_size=5)
+        )
+        model.fit(train, valid if len(valid) >= 10 else None)
+        mean = model.predict(test).mean
+
+        assert np.isfinite(mean).all(), "the network produced non-finite predictions"
+        assert mean.min() > -20 and mean.max() < 40, (
+            f"predictions span [{mean.min():.1f}, {mean.max():.1f}], far outside the "
+            "p-scale; the network has diverged"
+        )
+
+    @pytest.mark.torch
     def test_calibration_needs_a_validation_fold(self, aggregated):
         pytest.importorskip("torch")
         from leakfree_dta.models.robust.shift_robust import ShiftRobustDTA

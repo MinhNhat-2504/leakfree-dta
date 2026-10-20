@@ -328,12 +328,21 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     y_true = reference.set_index(schema.ROW_KEY).loc[list(reference[schema.ROW_KEY])]["y_true"].to_numpy()
     predictions = {name: frame["y_pred"].to_numpy() for name, frame in aligned.items()}
 
-    group_column = (
-        "protein_group"
-        if "protein_group" in reference.columns
-        else schema.TARGET_FAMILY
-        if schema.TARGET_FAMILY in reference.columns
-        else None
+    # The bootstrap resamples whichever unit the dependence between rows runs
+    # along. Protein clusters are the first choice; a split that constrains only
+    # the ligand axis carries no protein_group, so ligand clusters come next, and
+    # individual targets after that.
+    #
+    # Target *family* is deliberately not in this list. With three families it
+    # gives a three-group bootstrap, whose interval is driven by which of three
+    # blocks was drawn and is not an estimate of anything.
+    group_column = next(
+        (
+            column
+            for column in ("protein_group", "ligand_group", schema.TARGET_KEY)
+            if column in reference.columns
+        ),
+        None,
     )
     groups = (
         reference.set_index(schema.ROW_KEY).loc[list(reference[schema.ROW_KEY])][group_column].to_numpy()
@@ -342,6 +351,15 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     )
     if groups is None:
         logger.warning("no grouping column; falling back to the row bootstrap, which is too narrow")
+    else:
+        n_groups = len(set(groups.tolist()))
+        logger.info("cluster bootstrap over %d %s groups", n_groups, group_column)
+        if n_groups < 20:
+            logger.warning(
+                "only %d bootstrap groups; the intervals in this table are unstable and "
+                "should not be used to call small differences",
+                n_groups,
+            )
 
     table = bootstrap_table(
         y_true, predictions, METRICS, groups=groups, n_bootstrap=args.n_bootstrap

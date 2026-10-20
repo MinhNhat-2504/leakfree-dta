@@ -162,8 +162,26 @@ class GroupDROModel(DTAModel):
         group_ids = np.array([group_index[label] for label in groups], dtype=np.int64)
 
         # Standardise features on the training fold only.
+        #
+        # The clamp matters more here than it looks. Most ECFP bits are zero
+        # throughout any given training fold, so their standard deviation is
+        # exactly zero. Clamping to a small epsilon and dividing would turn a
+        # single set bit in the test fold into a value of order 1e6 and diverge
+        # the network -- and it would do so precisely on the leakage-free splits,
+        # where test compounds are most chemically distinct and so most likely to
+        # set a bit the training fold never did. A constant feature carries no
+        # information, so its scale is set to one, leaving it centred at zero.
         self._scaler_mean = x_train.mean(axis=0)
-        self._scaler_scale = np.maximum(x_train.std(axis=0), 1e-6)
+        deviation = x_train.std(axis=0)
+        self._scaler_scale = np.where(deviation < 1e-6, 1.0, deviation)
+        n_constant = int((deviation < 1e-6).sum())
+        if n_constant:
+            logger.info(
+                "%d of %d features are constant in the training fold; they are centred "
+                "but not rescaled",
+                n_constant,
+                x_train.shape[1],
+            )
         x_train = (x_train - self._scaler_mean) / self._scaler_scale
 
         model = _build_mlp(nn, x_train.shape[1], config).to(device)
@@ -218,9 +236,22 @@ class GroupDROModel(DTAModel):
                 )
 
                 # Exponentiated gradient on the adversary, then renormalise.
+                #
+                # The max is subtracted before exponentiating. Since the weights are
+                # renormalised immediately afterwards, subtracting any constant
+                # leaves the result mathematically identical, but it keeps the
+                # exponential from overflowing early in training when a group's
+                # squared error can still be large.
                 with torch.no_grad():
-                    group_weights[present] *= torch.exp(config.group_lr * group_losses.detach())
-                    group_weights /= group_weights.sum()
+                    step = config.group_lr * group_losses.detach()
+                    group_weights[present] *= torch.exp(step - step.max())
+                    total_weight = group_weights.sum()
+                    if total_weight > 0:
+                        group_weights /= total_weight
+                    else:
+                        # Every weight underflowed to zero; restart from uniform
+                        # rather than propagate NaNs through the objective.
+                        group_weights.fill_(1.0 / len(group_weights))
 
                 weights = group_weights[present]
                 objective = (weights * group_losses).sum() / weights.sum()
