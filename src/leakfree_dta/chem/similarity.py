@@ -27,8 +27,15 @@ logger = get_logger(__name__)
 
 BitVect = DataStructs.ExplicitBitVect
 
-#: Above this many molecules, switch from exact Butina to sphere exclusion.
-EXACT_CLUSTERING_LIMIT = 8_000
+#: Above this many molecules, switch from exact Butina to leader clustering.
+#:
+#: Butina needs the full condensed distance matrix, which it takes as a Python
+#: list: n(n-1)/2 float objects, about 0.05 GB at 2,000 molecules and 0.77 GB at
+#: 8,000. The limit used to be 8,000, which is already most of a gigabyte for a
+#: set small enough that the two algorithms barely differ. 2,000 keeps the exact
+#: path available for the small-scale agreement check without the memory being a
+#: consideration; everything at real scale takes the leader path regardless.
+EXACT_CLUSTERING_LIMIT = 2_000
 
 
 @dataclass(frozen=True)
@@ -179,44 +186,46 @@ def _butina_exact(vectors: Sequence[BitVect], cutoff: float) -> np.ndarray:
 
 
 def _sphere_exclusion(vectors: Sequence[BitVect], cutoff: float) -> np.ndarray:
-    """Leader-follower clustering: pick a leader, absorb everything within cutoff.
+    """Leader clustering: each molecule joins its most similar leader, or starts one.
 
-    Deterministic given the input order. Callers that need order-independence
-    should sort the molecules by a stable key (the pipeline sorts by InChIKey)
-    before calling.
+    Deterministic given the input order. Callers needing order-independence
+    should sort by a stable key first; the pipeline sorts by InChIKey.
+
+    The implementation detail here is the difference between usable and not. An
+    earlier version rebuilt two Python lists on every iteration -- the unassigned
+    molecules, and their fingerprints -- which is O(n) interpreted work per
+    leader. On real ChEMBL ligands that showed up as super-quadratic scaling:
+    doubling from 5,000 to 10,000 molecules took 7.7x longer, and extrapolating
+    to the extract's 466,000 structures gave days.
+
+    Now the leader fingerprints live in one list that is only ever appended to,
+    and each molecule makes a single bulk call against it. The Tanimoto work is
+    unchanged at O(n x n_leaders), but it all happens inside RDKit instead of
+    around it.
+
+    A molecule joins its *best* leader rather than the first one within range.
+    Marginally better clusters for the same cost, and it makes the result
+    independent of leader creation order among equally-close candidates.
     """
     n = len(vectors)
     threshold = 1.0 - cutoff
     labels = np.full(n, -1, dtype=np.int32)
-    leaders: list[int] = []
+
+    # Appended to, never rebuilt. This is the whole optimisation.
+    leader_vectors: list[BitVect] = []
 
     for i in range(n):
-        if labels[i] != -1:
-            continue
-        if leaders:
+        if leader_vectors:
             scores = np.asarray(
-                DataStructs.BulkTanimotoSimilarity(vectors[i], [vectors[j] for j in leaders]),
+                DataStructs.BulkTanimotoSimilarity(vectors[i], leader_vectors),
                 dtype=np.float32,
             )
             best = int(np.argmax(scores))
             if scores[best] >= threshold:
-                labels[i] = labels[leaders[best]]
+                labels[i] = best
                 continue
 
-        label = len(leaders)
-        labels[i] = label
-        leaders.append(i)
-
-        # Absorb all remaining unassigned molecules within the new leader's sphere.
-        remaining = [j for j in range(i + 1, n) if labels[j] == -1]
-        if not remaining:
-            continue
-        scores = np.asarray(
-            DataStructs.BulkTanimotoSimilarity(vectors[i], [vectors[j] for j in remaining]),
-            dtype=np.float32,
-        )
-        for j, score in zip(remaining, scores, strict=True):
-            if score >= threshold:
-                labels[j] = label
+        labels[i] = len(leader_vectors)
+        leader_vectors.append(vectors[i])
 
     return labels
