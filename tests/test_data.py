@@ -1,0 +1,201 @@
+"""Schema, curation, standardisation, and the fixture's own integrity."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from leakfree_dta.data import curate as curate_module
+from leakfree_dta.data import schema
+
+
+class TestSchema:
+    def test_fixture_satisfies_the_schema(self, synthetic_df):
+        assert schema.validate(synthetic_df) == []
+
+    def test_missing_required_column_is_reported(self, synthetic_df):
+        violations = schema.validate(synthetic_df.drop(columns=[schema.Y_TYPE]))
+        assert any(violation.column == schema.Y_TYPE for violation in violations)
+
+    def test_implausible_affinity_is_reported(self, synthetic_df):
+        broken = synthetic_df.copy()
+        broken.loc[broken.index[:3], schema.Y] = 99.0
+        violations = schema.validate(broken)
+        assert any("plausible range" in violation.problem for violation in violations)
+
+    def test_row_key_is_unique_and_order_independent(self, synthetic_df):
+        keys = schema.make_row_key(synthetic_df)
+        shuffled = synthetic_df.sample(frac=1.0, random_state=0)
+        assert set(keys) == set(schema.make_row_key(shuffled))
+
+    def test_pair_key_identifies_a_measurement_target(self, synthetic_df):
+        pairs = schema.make_pair_key(
+            synthetic_df[schema.LIGAND_KEY], synthetic_df[schema.TARGET_KEY]
+        )
+        assert pairs.equals(synthetic_df[schema.PAIR_KEY])
+
+
+class TestUnitConversion:
+    """``pX = -log10([M])`` is the one conversion the whole benchmark rests on."""
+
+    @pytest.mark.parametrize(
+        ("value", "unit", "expected"),
+        [
+            (1.0, "nM", 9.0),
+            (1000.0, "nM", 6.0),
+            (1.0, "uM", 6.0),
+            (1.0, "mM", 3.0),
+            (1.0, "M", 0.0),
+            (1.0, "pM", 12.0),
+        ],
+    )
+    def test_known_conversions(self, value, unit, expected):
+        result = curate_module.to_p_scale(pd.Series([value]), pd.Series([unit]))
+        assert float(result.iloc[0]) == pytest.approx(expected, abs=1e-5)
+
+    def test_non_positive_concentration_becomes_nan(self):
+        result = curate_module.to_p_scale(pd.Series([0.0, -5.0]), pd.Series(["nM", "nM"]))
+        assert result.isna().all()
+
+    def test_unknown_unit_becomes_nan(self):
+        result = curate_module.to_p_scale(pd.Series([1.0]), pd.Series(["furlongs"]))
+        assert result.isna().all()
+
+    def test_already_p_scale_passes_through(self):
+        result = curate_module.to_p_scale(
+            pd.Series([7.5]), pd.Series(["nM"]), already_p=pd.Series([True])
+        )
+        assert float(result.iloc[0]) == pytest.approx(7.5)
+
+
+class TestStandardization:
+    def test_salt_is_stripped(self):
+        from leakfree_dta.chem.standardize import standardize_smiles
+
+        plain = standardize_smiles("CCN")
+        salt = standardize_smiles("CCN.Cl")
+        assert plain.ok and salt.ok
+        assert plain.inchikey == salt.inchikey
+
+    def test_charge_is_neutralised(self):
+        from leakfree_dta.chem.standardize import standardize_smiles
+
+        neutral = standardize_smiles("CC(=O)O")
+        anion = standardize_smiles("CC(=O)[O-]")
+        assert neutral.ok and anion.ok
+        assert neutral.inchikey == anion.inchikey
+
+    def test_invalid_smiles_is_reported_not_raised(self):
+        from leakfree_dta.chem.standardize import standardize_smiles
+
+        result = standardize_smiles("this is not a molecule")
+        assert not result.ok
+        assert result.inchikey is None
+
+    def test_skeleton_ignores_stereochemistry(self):
+        from leakfree_dta.chem.standardize import standardize_smiles
+
+        left = standardize_smiles("C[C@H](N)C(=O)O")
+        right = standardize_smiles("C[C@@H](N)C(=O)O")
+        assert left.ok and right.ok
+        assert left.inchikey != right.inchikey, "enantiomers must have distinct keys"
+        assert left.skeleton == right.skeleton, "but the same skeleton"
+
+    def test_peptides_are_excluded_by_the_druglike_filter(self):
+        from leakfree_dta.chem.standardize import is_druglike
+
+        assert is_druglike("CC(=O)Nc1ccc(O)cc1")  # paracetamol
+        assert not is_druglike("[Pt](Cl)(Cl)(N)N")  # cisplatin: metal complex
+        assert not is_druglike("C")  # too small
+
+
+class TestAggregation:
+    def test_replicates_collapse_to_one_row_per_pair(self, synthetic_df):
+        aggregated = curate_module.aggregate_replicates(synthetic_df, how="median")
+        assert aggregated[schema.PAIR_KEY].is_unique
+        assert len(aggregated) == synthetic_df[schema.PAIR_KEY].nunique()
+
+    def test_spread_is_carried_forward(self, synthetic_df):
+        """Replicate spread must survive aggregation.
+
+        The audit measures the noise floor on the replicate table; the models train
+        on the aggregated one. Carrying the spread across is what lets a result
+        reported on the second be read against a floor measured on the first.
+        """
+        aggregated = curate_module.aggregate_replicates(synthetic_df)
+        assert "y_spread" in aggregated.columns
+        assert "y_n_replicates" in aggregated.columns
+        assert (aggregated["y_spread"] > 0).any()
+
+    def test_median_resists_an_outlier(self):
+        base = pd.DataFrame(
+            {
+                schema.LIGAND_KEY: ["K"] * 3,
+                schema.SMILES: ["CCO"] * 3,
+                schema.TARGET_KEY: ["T"] * 3,
+                schema.TARGET_SEQUENCE: ["MKV" * 20] * 3,
+                schema.Y: [7.0, 7.1, 12.0],
+                schema.Y_TYPE: ["pKi"] * 3,
+                schema.SOURCE: ["a", "b", "c"],
+                schema.ASSAY_KEY: ["1", "2", "3"],
+            }
+        )
+        finalized = schema.finalize(base)
+        aggregated = curate_module.aggregate_replicates(finalized, how="median")
+        assert float(aggregated[schema.Y].iloc[0]) == pytest.approx(7.1)
+
+
+class TestFixtureIntegrity:
+    """The fixture is an instrument; these tests check it has not drifted."""
+
+    def test_every_template_and_head_combination_is_valid(self):
+        from rdkit import Chem, RDLogger
+
+        from leakfree_dta.data.synthetic import (
+            _BASE_LINKER_LENGTHS,
+            _CORE_TEMPLATES,
+            _HEADS,
+            _make_series,
+        )
+
+        RDLogger.DisableLog("rdApp.*")
+        n_series = len(_CORE_TEMPLATES) * len(_HEADS)
+        failures: list[str] = []
+        for series in range(n_series):
+            for length in _BASE_LINKER_LENGTHS:
+                smiles = _make_series(series, length)
+                if Chem.MolFromSmiles(smiles) is None:
+                    failures.append(smiles)
+        assert not failures, f"{len(failures)} template combinations do not parse: {failures[:3]}"
+
+    def test_fixture_has_enough_distinct_ligands(self, synthetic_df, synthetic_truth):
+        """A collapsed fixture would silently weaken every calibration test."""
+        assert synthetic_truth.n_ligands >= 120, (
+            f"only {synthetic_truth.n_ligands} distinct ligands; the generator is colliding"
+        )
+        assert len(synthetic_truth.analog_ligand_keys) >= 10
+
+    def test_shortcut_ceiling_is_in_a_sensible_range(self, synthetic_truth):
+        # The affinity model is mostly additive by construction, so the ceiling
+        # should be high but not unity -- otherwise there is no interaction to find.
+        assert 0.7 < synthetic_truth.shortcut_ceiling < 0.97
+
+    def test_paralogues_are_highly_similar(self, synthetic_df, synthetic_truth):
+        from leakfree_dta.prot.identity import local_identity
+
+        sequences = (
+            synthetic_df.drop_duplicates(subset=[schema.TARGET_KEY])
+            .set_index(schema.TARGET_KEY)[schema.TARGET_SEQUENCE]
+            .to_dict()
+        )
+        identities = [
+            local_identity(sequences[parent], sequences[child])
+            for parent, child in synthetic_truth.paralogue_target_keys
+            if parent in sequences and child in sequences
+        ]
+        assert identities, "no paralogue pair survived into the dataset"
+        assert float(np.min(identities)) > 0.80, (
+            f"planted paralogues are only {np.min(identities):.0%} identical; "
+            "the protein channel is not being exercised"
+        )

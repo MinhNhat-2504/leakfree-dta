@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leakfree-dta"
+version = "0.1.0"
+description = "Leakage-audited benchmark and shift-robust baseline for drug-target affinity prediction"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Minh Nhat" }]
+keywords = [
+  "drug-target affinity",
+  "data leakage",
+  "benchmark",
+  "conformal prediction",
+  "distributionally robust optimization",
+  "cheminformatics",
+]
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "pyarrow>=14",
+  "scipy>=1.11",
+  "scikit-learn>=1.3",
+  "rdkit>=2023.9",
+  "pyyaml>=6.0",
+  "matplotlib>=3.7",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+deep = ["torch>=2.1"]
+gbm = ["xgboost>=2.0"]
+plm = ["fair-esm>=2.0", "transformers>=4.40"]
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.4", "mypy>=1.8"]
+all = ["leakfree-dta[deep,gbm,plm,dev]"]
+
+[project.scripts]
+leakfree = "leakfree_dta.cli:main"
+
+[project.urls]
+Repository = "https://github.com/MinhNhat-2504/leakfree-dta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+leakfree_dta = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+  "slow: tests that take more than a few seconds",
+  "network: tests that require network access",
+  "torch: tests that require PyTorch",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+ignore_missing_imports = true

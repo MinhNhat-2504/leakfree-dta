@@ -1,0 +1,69 @@
+# The paper's main experiment.
+#
+# Fixed before any model is run, so that the set of comparisons is not chosen
+# after seeing which comparisons are flattering.
+
+dataset: chembl_3fam
+splits: ladder
+
+models:
+  # Degenerate predictors. In the MAIN table, not an appendix. They bound what the
+  # benchmark rewards without any interaction modelling, and that bound is the
+  # paper's reference point.
+  - global_mean
+  - target_mean
+  - ligand_mean
+  - additive_bias
+  # Classical learners: what a new architecture has to beat to have contributed.
+  - ridge_ecfp
+  - xgboost_ecfp
+  # The objective ablation: identical network, average loss versus worst-group loss.
+  - erm_mlp
+  - group_dro_mlp
+  # The proposed baseline: group DRO plus a Mondrian conformal head.
+  - shift_robust
+
+evaluation:
+  # Resampling protein groups, not rows. Row bootstrapping understates uncertainty
+  # on chemically redundant data, and most published intervals are too narrow for
+  # this reason.
+  bootstrap:
+    n_bootstrap: 1000
+    resample_unit: protein_group
+    alpha: 0.05
+  # Paired comparisons against the strongest degenerate predictor. A model that
+  # cannot beat `additive_bias` has not demonstrated interaction modelling,
+  # whatever its absolute score.
+  compare_against: additive_bias
+  report:
+    - overall
+    - macro_by_family
+    - worst_group
+  conformal:
+    alpha: 0.1
+    min_calibration_per_group: 20
+  selective_prediction:
+    coverages: [0.1, 0.2, 0.5, 0.8, 1.0]
+
+# Stated in advance. Any of these outcomes is a publishable result; naming them
+# beforehand is what stops the paper's conclusion from being chosen to fit
+# whichever numbers arrived.
+expected_outcomes:
+  - id: H1
+    claim: >
+      Recoverable leakage falls sharply from `random` to `ligand_cluster`, but only
+      slightly from `random` to `ligand_scaffold`, because scaffold splitting does
+      not separate homologous series.
+  - id: H2
+    claim: >
+      The dominant leakage channel differs by target family: protein identity for
+      kinases, ligand similarity for GPCRs, label inconsistency for proteases.
+  - id: H3
+    claim: >
+      On the `leakfree` split, the gap between the best deep model and
+      `additive_bias` is much smaller than on `random`, and may not be significant
+      under the cluster bootstrap.
+  - id: H4
+    claim: >
+      `shift_robust` is not the most accurate model on average, but has the lowest
+      worst-group error and the only group-conditionally valid intervals.

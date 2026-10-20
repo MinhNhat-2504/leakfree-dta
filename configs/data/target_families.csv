@@ -1,0 +1,24 @@
+# Curated target family assignments, applied before the automated rules.
+#
+# This file is the escape hatch for every target the automated classifier gets
+# wrong, and it is committed so that family assignment is auditable rather than a
+# side effect of whichever annotation snapshot happened to be current. Add a row
+# whenever `leakfree curate` reports a target as unassigned or misassigned.
+#
+# target_family must be one of: kinase, gpcr, protease, other
+#
+# The examples below are the canonical members of each family and serve as a
+# smoke test that the override path works.
+target_key,target_family,note
+P00533,kinase,EGFR
+P24941,kinase,CDK2
+P11362,kinase,FGFR1
+Q05397,kinase,PTK2 / FAK1
+P08908,gpcr,5-HT1A
+P41595,gpcr,5-HT2B
+P30542,gpcr,Adenosine A1
+P08172,gpcr,Muscarinic M2
+P00734,protease,Thrombin
+P00742,protease,Coagulation factor X
+P03951,protease,Coagulation factor XI
+P07711,protease,Cathepsin L

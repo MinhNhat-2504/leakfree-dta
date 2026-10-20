@@ -1,0 +1,108 @@
+# The split ladder: the paper's central experimental design.
+#
+# Each rung adds exactly one constraint to the one above it. That is what makes
+# the comparison interpretable: the drop in performance between two adjacent rungs
+# is attributable to the single channel the new constraint closes. A paper that
+# reports only "random" and "hard" splits cannot make that attribution.
+#
+# `excluded` counts matter and are reported. A two-axis split cannot place a row
+# whose ligand group and protein group fall on different sides, so it discards it.
+# That discarded fraction is the honest price of a leakage-free evaluation.
+
+defaults:
+  test_fraction: 0.2
+  valid_fraction: 0.1
+  seed: 0
+  # Assign whole groups to folds so that row counts approach the target fractions.
+  # Group-count balancing would give wildly uneven folds, because target
+  # measurement counts are extremely skewed.
+  balance_by_rows: true
+
+splits:
+  - name: random
+    ligand_axis: random
+    protein_axis: random
+    temporal_axis: none
+    note: >
+      What most published DTA results use. Included as the permissive end of the
+      ladder so the inflation relative to it can be quantified.
+
+  - name: ligand_scaffold
+    ligand_axis: scaffold
+    protein_axis: random
+    temporal_axis: none
+    note: >
+      The field's usual "hard" split. The audit shows it leaves the
+      near-duplicate channel open: homologous series get different Bemis-Murcko
+      scaffolds but identical ECFP4 fingerprints, so a model cannot tell the
+      sides apart.
+
+  - name: ligand_cluster
+    ligand_axis: cluster
+    protein_axis: random
+    temporal_axis: none
+    ligand_cluster_cutoff: 0.4
+    note: Closes the ligand channel properly, by fingerprint clustering.
+
+  - name: protein_identity
+    ligand_axis: random
+    protein_axis: identity
+    temporal_axis: none
+    note: >
+      Holds out accessions. Insufficient on its own: a held-out accession can have
+      a 90%-identical paralogue still in training.
+
+  - name: protein_cluster30
+    ligand_axis: random
+    protein_axis: cluster
+    protein_identity: 0.30
+    temporal_axis: none
+    note: 30% identity is roughly the limit of detectable fold similarity from sequence.
+
+  - name: protein_cluster50
+    ligand_axis: random
+    protein_axis: cluster
+    protein_identity: 0.50
+    temporal_axis: none
+    note: Stricter; also separates close paralogues, which matters inside the kinase family.
+
+  - name: both_cold
+    ligand_axis: cluster
+    protein_axis: cluster
+    protein_identity: 0.30
+    temporal_axis: none
+    note: New chemistry against new proteins. Discards the off-diagonal blocks.
+
+  - name: temporal
+    ligand_axis: random
+    protein_axis: random
+    temporal_axis: year
+    temporal_cutoff_year: 2019
+    temporal_valid_years: 2
+    note: >
+      The validation fold is the two years before the cutoff, not a random sample
+      of the training years, so the future never informs hyperparameter choice.
+
+  - name: leakfree
+    ligand_axis: cluster
+    protein_axis: cluster
+    protein_identity: 0.30
+    temporal_axis: year
+    temporal_cutoff_year: 2019
+    note: >
+      Every channel closed at once. The strictest rung, and the one the paper's
+      headline numbers are reported on. Expect a large excluded fraction; on small
+      target families this split can be degenerate, which the pipeline reports
+      rather than papering over.
+
+family_holdout:
+  # The cross-family generalisation experiment, run once per family.
+  - name: holdout_kinase
+    protein_axis: family
+    holdout_families: [kinase]
+  - name: holdout_gpcr
+    protein_axis: family
+    holdout_families: [gpcr]
+  - name: holdout_protease
+    protein_axis: family
+    holdout_families: [protease]

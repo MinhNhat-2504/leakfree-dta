@@ -1,0 +1,47 @@
+# The paper's primary dataset: a ChEMBL extract scoped to three target families.
+#
+# Why these three and not one, and not all of ChEMBL: they fail differently.
+# Kinases leak mainly through the protein axis (ATP-site conservation), GPCRs
+# through the ligand axis (tight analogue series), proteases through label
+# inconsistency (heterogeneous assays). A single family cannot show that no one
+# splitting rule suffices; all of ChEMBL would make the paper indistinguishable
+# from the audits already published.
+
+name: chembl_3fam
+source: chembl
+input: data/raw/chembl_3fam_activities.parquet
+
+families: [kinase, gpcr, protease]
+
+curation:
+  # ChEMBL confidence 8 is "homologous single protein", 9 is "direct single
+  # protein". Below 8 the activity is not reliably attributable to one target.
+  min_confidence: 8
+  # Censored values are bounds, not measurements. Keeping them biases RMSE
+  # downward in a direction that depends on the model, which makes comparisons
+  # meaningless.
+  drop_censored: true
+  # Peptides, oligonucleotides and metal complexes are a different prediction
+  # problem; results are reported with and without them.
+  druglike_only: true
+  # Prefer ChEMBL's own pchembl_value where present, converting standard_value
+  # only where it is not.
+  prefer_pchembl: true
+  # The audit runs on the un-aggregated table so replicate disagreement survives
+  # to be measured; models train on the aggregated one.
+  aggregate: median
+
+affinity:
+  types: [pKi, pKd, pIC50]
+  # Reported both ways. Pooling IC50 with the thermodynamic constants is standard
+  # practice and standard criticism, so the paper quantifies the cost instead of
+  # defending the choice.
+  report_without_ic50: true
+  plausible_range: [2.0, 12.0]
+  # 100 nM, a common screening cut-off, used for enrichment and BEDROC.
+  active_threshold: 7.0
+
+targets:
+  require_sequence: true
+  min_sequence_length: 50
+  family_overrides: configs/data/target_families.csv
