@@ -221,6 +221,11 @@ class GroupDROModel(DTAModel):
             order = rng.permutation(n)
             for start in range(0, n, config.batch_size):
                 batch = order[start : start + config.batch_size]
+                if len(batch) < 2:
+                    # BatchNorm cannot estimate statistics from a singleton
+                    # training batch. The row is retained in the fold but
+                    # skipped for this epoch, matching drop_last semantics.
+                    continue
                 batch_x = x_tensor[batch]
                 batch_y = y_tensor[batch]
                 batch_g = group_tensor[batch]

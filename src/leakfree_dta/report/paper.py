@@ -10,10 +10,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from leakfree_dta import paths
+from leakfree_dta.data import schema
+from leakfree_dta.eval.risk_coverage import risk_coverage_curve
 from leakfree_dta.logging import get_logger
 from leakfree_dta.report import figures, tables
-from leakfree_dta.utils.io import write_table, write_text
+from leakfree_dta.utils.io import read_table, write_table, write_text
 
 logger = get_logger(__name__)
 
@@ -93,6 +97,28 @@ def build_report(dataset: str, *, splits: list[str] | None = None) -> list[Path]
             )
         )
 
+    robustness = tables.robustness_summary(dataset)
+    if not robustness.empty:
+        written.append(write_table(robustness, out_tables / "table4_robustness.csv"))
+        written.append(
+            tables.write_markdown(
+                robustness,
+                out_tables / "table4_robustness.md",
+                title="Table 4. Robustness and uncertainty summary on the leakage-free split",
+                note=(
+                    "Worst-family RMSE is the maximum family-level RMSE. Coverage and "
+                    "interval width are reported only for models that emit prediction "
+                    "intervals; AURC is the area under the selective risk-coverage curve."
+                ),
+            )
+        )
+        coverage_figure = _coverage_figure(dataset, out_figures)
+        if coverage_figure:
+            written.append(coverage_figure)
+        risk_figure = _risk_coverage_figure(dataset, out_figures)
+        if risk_figure:
+            written.append(risk_figure)
+
     # The noise floor, quoted beside every RMSE in the text.
     floor = tables.noise_floor(dataset)
     if floor:
@@ -128,6 +154,54 @@ def build_report(dataset: str, *, splits: list[str] | None = None) -> list[Path]
 
     written.append(_write_index(dataset, written, notes, out_tables))
     return written
+
+
+def _coverage_figure(dataset: str, out_figures: Path) -> Path | None:
+    """Generate family-level empirical coverage for the interval model."""
+    path = paths.RUNS / dataset / "leakfree" / "shift_robust" / "predictions.parquet"
+    if not path.exists():
+        return None
+    frame = read_table(path)
+    required = {"y_true", "y_lower", "y_upper", schema.TARGET_FAMILY}
+    if not required.issubset(frame.columns):
+        return None
+    frame["covered"] = (frame["y_true"] >= frame["y_lower"]) & (
+        frame["y_true"] <= frame["y_upper"]
+    )
+    rows = [
+        {
+            "group": group,
+            "coverage": float(chunk["covered"].mean()),
+            "n": len(chunk),
+        }
+        for group, chunk in frame.groupby(schema.TARGET_FAMILY, observed=True)
+    ]
+    rows.append({"group": "__overall__", "coverage": float(frame["covered"].mean()), "n": len(frame)})
+    coverage = pd.DataFrame(rows)
+    table_path = paths.TABLES / dataset / "family_coverage.csv"
+    write_table(coverage, table_path)
+    return figures.plot_group_coverage(coverage, out_figures / "fig3_coverage_by_family.png")
+
+
+def _risk_coverage_figure(dataset: str, out_figures: Path) -> Path | None:
+    """Generate risk-coverage curves for models that report uncertainty."""
+    root = paths.RUNS / dataset / "leakfree"
+    curves: dict[str, pd.DataFrame] = {}
+    for model in ("erm_mlp", "group_dro_mlp", "shift_robust"):
+        path = root / model / "predictions.parquet"
+        if not path.exists():
+            continue
+        frame = read_table(path)
+        if not {"y_true", "y_pred", "y_std"}.issubset(frame.columns):
+            continue
+        curves[model] = risk_coverage_curve(
+            frame["y_true"].to_numpy(),
+            frame["y_pred"].to_numpy(),
+            -frame["y_std"].to_numpy(),
+        )
+    if not curves:
+        return None
+    return figures.plot_risk_coverage(curves, out_figures / "fig4_risk_coverage.png")
 
 
 def _discover_splits(dataset: str) -> list[str]:

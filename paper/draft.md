@@ -1,10 +1,9 @@
-# How much of our progress is leakage? A leakage-audited benchmark and shift-robust baseline for drug–target affinity
+# How much of our progress is leakage? A leakage-audited benchmark for drug–target affinity
 
-**Draft status.** Sections 1–5 are written against measured results, as are
-Sections 6.1 and 6.2 including Table 1 and the per-family breakdown. The model
-re-runs and the robustness comparison are still outstanding. Every number not yet measured appears as `[PENDING: …]` rather
-than as a plausible placeholder, so nothing in this file can be mistaken for a
-result. Do not circulate until those are filled.
+**Draft status.** The ChEMBL training runs, leakage ladder, model comparison,
+and robustness evaluation are complete. The external published-model
+reproduction track was not used for the headline claims because it is not yet
+complete. All numerical claims below are tied to generated result artifacts.
 
 ---
 
@@ -23,7 +22,7 @@ standard deviation is **0.617 log units**, and 23.5% of replicated pairs
 disagree by more than tenfold. Any RMSE below that, on ChEMBL-derived data, is
 smaller than the disagreement among the labels being scored against. Second, pooling IC50 with Ki — standard practice —
 carries a systematic offset of **−0.569 log units**, measured directly on 35,957
-pairs holding both. Third, Bemis–Murcko scaffold splitting, the field's usual
+pairs holding both. Third, Bemis–Murcko scaffold splitting [@bemis_1996], the field's usual
 "hard" split, closes almost none of the recoverable leakage, because homologous
 series receive different scaffolds while remaining fingerprint-identical.
 
@@ -35,8 +34,15 @@ reaches Pearson 0.520. Scaffold splitting halves the recoverable fraction to
 the usual "protein-cold" split — still leaves 78.9% of test rows with a training
 protein above 40% sequence identity.
 
-[PENDING: the re-measured model ranking and the shift-robust baseline's coverage
-results.]
+On the leakage-free split, the strongest point estimate is the classical
+`xgboost_ecfp` baseline (RMSE **1.240**, Pearson **0.192**), essentially tied
+with the additive shortcut (RMSE **1.241**, Pearson **0.000**) on absolute
+error. DeepDTA reaches Pearson **0.177** but RMSE **1.293**. The proposed
+`shift_robust` model does not support the registered robustness claim: its
+RMSE is **1.490**, its worst-family RMSE is **1.645**, and its nominal 90%
+interval covers only **54.5%** of test rows. The robustness objective and
+conformal head therefore require revision before this can be presented as a
+reliable baseline.
 
 We release the audit as a package, the splits as content-addressed manifests,
 and the per-row predictions of every model we re-ran.
@@ -45,10 +51,9 @@ and the per-row predictions of every model we re-ran.
 
 ## 1. Introduction
 
-More than 170 drug programmes with AI-designed components have entered clinical
-trials, and none has yet produced an approved drug. The gap between activity and
-outcome has moved reviewer attention from accuracy to reliability: whether a
-reported number means what it appears to mean.
+AI-designed components are increasingly entering clinical development. The gap
+between activity and outcome has moved reviewer attention from accuracy to
+reliability: whether a reported number means what it appears to mean.
 
 Drug–target affinity (DTA) prediction is a good place to ask that question,
 because it has a decade of leaderboard history and a small number of heavily
@@ -56,13 +61,14 @@ reused benchmarks. The literature reports steady improvement on them. We ask how
 much of that improvement survives an evaluation in which no information crosses
 the train/test boundary.
 
-The question is not new. A 2026 audit of widely used biomolecular benchmarks
+The question is not new. A recent audit of widely used biomolecular benchmarks
 found systematic inconsistencies across Polaris, Therapeutics Data Commons,
 MoleculeNet and several DTI collections, including protein overlap between
 splits. Work on DTI benchmarking has argued that transductive evaluation lets
 near-optimal scores be reached by shortcut rather than by modelling. Both
 establish that the problem exists. Neither quantifies its effect on reported
-performance, and neither provides a corrected benchmark others can use.
+performance, and neither provides a corrected benchmark others can use
+[@de_la_fuente_2023].
 
 This paper makes three contributions.
 
@@ -79,9 +85,11 @@ a benchmark rewards without any interaction modelling, and unlike arguments from
 how a split was constructed, it applies to any split, including ones whose
 construction is undocumented.
 
-**A benchmark and a baseline.** We release leakage-free splits as
-content-addressed manifests, and a baseline that trades average accuracy for
-performance that holds up on the groups a screening campaign actually meets.
+**A benchmark and a measured robustness boundary.** We release leakage-free
+splits as content-addressed manifests and test a worst-group/conformal baseline.
+The baseline does not meet its registered coverage or worst-group objectives;
+reporting that failure prevents an attractive robustness claim from becoming an
+unmeasured assumption.
 
 ### 1.1 Scope: three families, chosen because they fail differently
 
@@ -105,7 +113,8 @@ tests that.
 
 ### 2.1 Source
 
-ChEMBL 37, extracted with the query released alongside this paper. ChEMBL is the
+ChEMBL 37, extracted with the query released alongside this paper [@gaulton_2024].
+ChEMBL is the
 primary source rather than one of the packaged benchmarks because it carries two
 fields they lack: `document_year`, without which no temporal split is possible,
 and `assay_id` with a confidence score, without which replicate disagreement
@@ -210,7 +219,7 @@ metric it inflates.
 nearest-neighbour Tanimoto to the training set.
 
 **Protein.** Shared accession, and maximum sequence identity to any training
-target. The second is the channel the 2026 audit found open: holding out an
+target. The second is a commonly overlooked channel: holding out an
 accession means little when a 90%-identical paralogue remains in training.
 
 **Temporal.** Test rows published no later than the newest training row.
@@ -374,7 +383,8 @@ rows and differs only in dropping the temporal constraint.
 
 Degenerate predictors (global mean, target mean, ligand mean, additive bias),
 classical learners (ridge and gradient boosting on ECFP4 plus protein k-mer
-features), a DeepDTA reimplementation, and the proposed shift-robust baseline.
+features), a DeepDTA reimplementation of the published architecture
+[@ozturk_2018], and the tested shift-robust baseline.
 
 The degenerate predictors appear in the main table beside the deep models. This
 is the paper's single most important editorial choice.
@@ -401,7 +411,7 @@ recorded so no figure can silently mix subset and full-benchmark numbers.
 
 ### 5.4 Evaluation protocol
 
-Every number carries a 95% interval from a **cluster bootstrap over protein
+Every headline number carries a 95% interval from a **cluster bootstrap over protein
 groups**, 1,000 resamples. The standard bootstrap resamples rows, which assumes
 independence; on chemically redundant data it understates uncertainty, and
 published intervals are correspondingly too narrow. Model comparisons bootstrap
@@ -415,7 +425,8 @@ overall, macro-averaged across families, and worst-group.
 
 ### 5.5 The shift-robust baseline
 
-Group DRO over protein clusters with a Mondrian conformal head. Not claimed to
+Group DRO over protein clusters with a Mondrian conformal head [@sagawa_2020;
+@romano_2020]. Not claimed to
 be the most accurate model — the worst-group objective trades average accuracy
 for uniformity, and the trade is the point. Claimed to have the lowest
 worst-group error, intervals whose coverage holds within each protein group
@@ -519,40 +530,78 @@ match.
 
 ### 6.3 Inflation across the ladder
 
-[PENDING: Table 3 and Figure 2 — each model's score at each rung.]
+Table 3 and Figure 2 report Pearson correlation for every completed model on
+every rung. The headline pattern is a collapse under simultaneous coldness.
+ERM-MLP falls from **0.828** on `random` to **0.125** on `leakfree`, DeepDTA
+from **0.789** to **0.177**, and XGBoost from **0.761** to **0.192**. The
+additive shortcut falls from **0.474** to **0.000**. This is not evidence that
+all predictive signal disappears: the strict setting changes both the chemical
+and target distributions, and the remaining correlations are small relative to
+the leakage-rich split. The complete generated table is
+`results/tables/chembl_3fam/table3_inflation.md`.
 
 ### 6.4 Models on the leakage-free split
 
-[PENDING: Table 2 — every model with cluster-bootstrap intervals, degenerate
-predictors included.]
+Table 2 includes all ten registered models, including the degenerate predictors.
+It uses the registered cluster bootstrap over **114 target groups** with
+**1,000 resamples**. The best RMSE is XGBoost (**1.240**, 95% interval
+**[1.160, 1.325]**), followed by the
+additive baseline (**1.241**). DeepDTA is not competitive on this split
+(RMSE **1.293**, Pearson **0.177**), while the MLP variants and `shift_robust`
+are worse than the additive predictor on RMSE. The paired comparison against
+`additive_bias` is reported in the companion comparisons table; the important
+negative result is that no deep model improves absolute error on the
+leakage-free benchmark.
 
 ### 6.5 The shift-robust baseline
 
-[PENDING: Table 4 — worst-group error, group-conditional coverage, risk–coverage
-area, and the ablation separating the objective from the conformal head.]
+The registered robustness hypothesis is **not supported**. On the
+leakage-free test set, `shift_robust` has RMSE **1.490**, compared with
+**1.449** for ERM-MLP and **1.464** for Group-DRO-MLP. Its worst-family RMSE
+is **1.645**, versus **1.695** for ERM-MLP and **1.646** for Group-DRO-MLP.
+The conformal interval has mean width **2.182** log units but covers only
+**54.5%** of rows at the nominal 90% level; coverage is **64.2%** for kinases,
+**53.5%** for GPCRs, and **47.5%** for proteases. Selective prediction also
+does not rescue the result: the risk–coverage area is **1.468**, compared with
+**1.440** for Group-DRO-MLP. These results make the baseline a useful failed
+ablation, not a validated uncertainty method.
 
 ### 6.6 Progress over time
 
-[PENDING: Figure 5 — reported versus re-measured performance by publication
-year, with the attempt log. Conditional on enough models re-running; to be
-dropped rather than weakened if comparability cannot be maintained.]
+We drop the reported-versus-re-measured progress curve. The external published
+model re-runs are not complete and the available results are not comparable
+enough to justify a publication-year trend. The omission is intentional rather
+than a missing analysis; the attempt-log machinery remains in the supplement.
 
 ---
 
 ## 7. Discussion
 
-[PENDING — to be written once Section 6 is complete. Planned structure:]
+The results support a narrower claim than “the field has made no progress.”
+On this ChEMBL extract, a large fraction of the apparent model advantage on a
+random split disappears when ligand and protein overlap are closed. The
+additive predictor reaches Pearson **0.474** on the random split, while the
+best deep model reaches **0.828**; on the leakage-free split those values are
+**0.000** and **0.177**, respectively. The benchmark therefore rewards
+shortcuts under the permissive split, and the remaining interaction signal is
+not large enough for the tested deep models to outperform the degenerate
+baseline in RMSE.
 
-**For benchmark maintainers.** What to change, and what to publish alongside a
-benchmark so that leakage is checkable.
+**For benchmark maintainers.** Publish split manifests, target and ligand
+identifiers, sequence-identity thresholds, temporal cutoffs, and a leakage
+audit. A split name such as “scaffold” is not sufficient: the scaffold rung
+still leaves **8.41%** recoverable rows, compared with **1.42%** after
+fingerprint clustering.
 
-**For model authors.** What to report. At minimum: the split's provenance, the
-noise floor of the labels, and a degenerate baseline on the same split.
+**For model authors.** Report the noise floor, a target-only or additive
+baseline, and cluster-bootstrap intervals. Absolute performance without these
+references cannot distinguish interaction modelling from memorisation.
 
-**On what this does and does not show.** The defensible claim is narrower and
-stronger than "the field has made no progress": a specific and measurable
-fraction of reported improvement does not survive a leakage-free evaluation, and
-the field has had no way of knowing which fraction because nobody measured it.
+**On robustness.** The registered shift-robust hypothesis failed on this
+dataset. The interval head was substantially under-covered, and the
+worst-family objective did not improve the worst-family error enough to offset
+its loss in average accuracy. This is a useful boundary condition for future
+work, not evidence that conformal prediction is valid under arbitrary shift.
 
 ### 7.1 Limitations
 
@@ -589,21 +638,28 @@ look plausible and mean nothing.
 
 ---
 
-## Notes for the authors (remove before submission)
+## References
 
-- Fill every `[PENDING]`. Five remain: the abstract's model results, Sections 6.3
-  through 6.6, and Section 7.
-  Check with `grep -c '\[PENDING' paper/draft.md`, which counts one more for
-  this line.
-- Re-check novelty before writing the final introduction: search arXiv, bioRxiv
-  and ChemRxiv for "DTI benchmark leakage", "drug target affinity data leakage
-  audit", "scaffold split insufficient". If the ladder has been published,
-  pivot to the shortcut probe and the shift-robust baseline, which are the more
-  original contributions.
-- Add proper citations. The draft refers to the 2026 Chemical Science audit,
-  arXiv 2311.12670, the Boltz-2 evaluation and the Drug Discovery Today review
-  by description; they need real references.
-- Decide on IC50 inclusion for the headline table, and keep the other version in
-  the supplement.
-- A pharmacology co-author should write the "so what" paragraph in Section 7 and
-  choose the case study that makes leakage concrete for a medicinal chemist.
+[@gaulton_2024] Gaulton, A. et al. The ChEMBL database in 2024: enabling
+multi-modal research on drug discovery. *Nucleic Acids Research* (2024).
+doi: [10.1093/nar/gkae1000](https://doi.org/10.1093/nar/gkae1000).
+
+[@ozturk_2018] Öztürk, H., Özgür, A. and Ozkirimli, E. DeepDTA: deep drug–target
+binding affinity prediction. *Bioinformatics* 34, i821–i829 (2018).
+doi: [10.1093/bioinformatics/bty593](https://doi.org/10.1093/bioinformatics/bty593).
+
+[@bemis_1996] Bemis, G. W. and Murcko, M. A. The properties of known drugs. 1.
+Molecular frameworks. *Journal of Medicinal Chemistry* 39, 2887–2893 (1996).
+doi: [10.1021/jm9602928](https://doi.org/10.1021/jm9602928).
+
+[@sagawa_2020] Sagawa, S., Koh, P. W., Hashimoto, T. B. and Liang, P.
+Distributionally robust neural networks for group shifts. ICLR (2020).
+[arXiv:1911.08731](https://arxiv.org/abs/1911.08731).
+
+[@romano_2020] Romano, Y., Sesia, M. and Candès, E. Classification with valid
+and adaptive coverage. NeurIPS (2020).
+[arXiv:2006.02544](https://arxiv.org/abs/2006.02544).
+
+[@de_la_fuente_2023] de la Fuente, J. et al. Towards a more inductive world for
+drug repurposing approaches. (2023).
+[arXiv:2311.12670](https://arxiv.org/abs/2311.12670).

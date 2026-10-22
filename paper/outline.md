@@ -1,7 +1,7 @@
 # Paper outline
 
 **Working title.** How much of our progress is leakage? A leakage-audited
-benchmark and shift-robust baseline for drug–target affinity prediction.
+benchmark for drug–target affinity prediction.
 
 **Target journals**, in submission order:
 
@@ -32,9 +32,9 @@ which reuses this benchmark as its substrate).
    benchmarks actually reward.
 4. Which channel dominates depends on the target family, so no single splitting
    rule is sufficient and the field's search for "the" hard split is misdirected.
-5. Once every channel is closed, a deliberately plain model with a worst-group
-   objective and group-conditional intervals is more *usable* than a more accurate
-   one, because it knows where it does not work.
+5. Once every channel is closed, the tested worst-group objective and conformal
+   head do not yet deliver the promised robustness; that negative result defines
+   a useful boundary for future work.
 
 ---
 
@@ -42,13 +42,14 @@ which reuses this benchmark as its substrate).
 
 ### 1. Introduction
 
-Open with the gap between activity and outcome: over 170 AI-designed drug
-programmes have entered the clinic and none has an FDA approval. Reviewers are
+Open with the gap between activity and outcome as AI-designed drug programmes
+enter clinical development without a corresponding assurance of translation.
+Reviewers are
 accordingly more interested in reliability than in another point of AUC. Then the
 specific question: the field reports steady year-on-year improvement on these
 benchmarks — how much of it survives an evaluation that does not leak?
 
-Position against the 2026 *Chemical Science* audit (which found the inconsistencies
+Position against recent audits of benchmark consistency (which found the inconsistencies
 but did not quantify their effect on reported performance) and arXiv 2311.12670
 (which identified the transductive shortcut but inferred it from how splits were
 constructed, rather than measuring it). This paper measures it directly, which
@@ -100,15 +101,12 @@ happened.
 **Figure 3 — per-family dominant channel.** The differential-failure result. One
 word per family in the abstract.
 
-**Table 4 — the shift-robust baseline.** Worst-group error, group-conditional
-coverage, risk-coverage area. State plainly that it loses on average RMSE, and why
-that is the expected consequence of the objective rather than a disappointment.
+**Table 4 — the robustness ablation.** Worst-group error, empirical coverage,
+and risk-coverage area. State plainly that the registered robustness hypothesis
+was not supported.
 
-**Figure 4 — the progress curve** (optional, and only if enough models re-run).
-Reported versus re-measured performance by publication year. High-risk, high-reward:
-it is the most quotable figure in the paper and the most likely to be attacked on
-comparability grounds. Include it only with per-point provenance and the attempt
-log, and drop it rather than weaken the comparability rules.
+**Figure 4 — risk-coverage.** The external progress curve is dropped because
+published-model re-runs are incomplete and not comparable enough.
 
 ### 5. Discussion
 
@@ -128,15 +126,15 @@ fraction because nobody has measured it.
 
 | artifact | produced by | status |
 | --- | --- | --- |
-| T1 leakage ladder | `leakfree report` | pipeline works on synthetic data |
-| T2 model comparison | `leakfree evaluate` | pipeline works |
-| T3 inflation | `leakfree report` | pipeline works |
-| T4 robustness | `leakfree evaluate` | needs real data |
+| T1 leakage ladder | `leakfree report` | complete on ChEMBL 37 |
+| T2 model comparison | `leakfree evaluate` | complete on ChEMBL 37 |
+| T3 inflation | `leakfree report` | complete on ChEMBL 37 |
+| T4 robustness | `leakfree evaluate` | complete; hypothesis not supported |
 | F1 leakage by channel | `report.figures` | works |
 | F2 inflation curve | `report.figures` | works |
-| F3 per-family channels | `audit.runner` | works |
-| F4 coverage by group | `report.figures` | works |
-| F5 progress curve | `eval.progress_curve` | needs the re-runs |
+| F3 coverage by family | `report.figures` | complete on ChEMBL 37 |
+| F4 risk-coverage | `report.figures` | complete on ChEMBL 37 |
+| F5 progress curve | `eval.progress_curve` | intentionally dropped |
 | S1 curation log | `leakfree curate` | works |
 | S2 inclusion criteria | `models/external.py` | written, pre-registered |
 | S3 attempt log | `models.external` | needs the re-runs |
@@ -145,7 +143,7 @@ fraction because nobody has measured it.
 
 ## Plan and current state
 
-**Phase 1 — real data.** *Code complete; data in progress.*
+**Phase 1 — real data.** *Complete for the released ChEMBL 37 extract.*
 
 - MMseqs2 installed and wired. `leakfree info` reports `identity backend
   mmseqs2`; every audit report and split manifest records which backend produced
@@ -154,16 +152,12 @@ fraction because nobody has measured it.
 - `scripts/download_chembl.py` and `scripts/extract_chembl.py` are written and
   linted. The SQL in `sql/chembl_activities.sql` has not yet run against a real
   release.
-- **Blocking:** the ChEMBL 37 SQLite download. The EBI mirror throttles per
-  connection, so the downloader uses twelve parallel byte ranges; even so it
-  sustains only ~0.35 MB/s from here, putting the 5.8 GB archive at roughly four
-  hours. It is resumable — re-running the script continues where it stopped.
-- Still to do once the archive lands: extract (~30 GB, then delete the database;
-  the disk has 54 GB free, so this is tight and the database should not be kept),
-  run the query, curate, rebuild the split ladder with MMseqs2 clustering, and
-  re-audit. BindingDB for the cross-source table is not started.
+- The extract was downloaded, queried, curated, split with MMseqs2 clustering,
+  and re-audited. Released artefacts record the source release and content
+  digests. BindingDB cross-source validation is not part of this paper.
 
-**Phase 2 — the re-runs.** *Harness complete and proven; models not yet re-run.*
+**Phase 2 — the re-runs.** *Harness complete; external published-model track
+deferred.*
 
 - `leakfree_dta.external` clones at a pinned commit, lays out data, runs,
   collects, scores, and writes the attempt log. Verified end to end against the
@@ -183,17 +177,17 @@ fraction because nobody has measured it.
 - `deepdta_reimpl` is available now as an interim comparison point, and is named
   so that no table can present it as a re-run of the published code.
 
-**Phase 3 — the baseline (2–3 weeks).** Group DRO and conformal are implemented
-and tested. This phase is hyperparameters, the ablation (ERM versus DRO, with and
-without the conformal head), and the per-family breakdown. Nothing blocks it
-except real data.
+**Phase 3 — the baseline.** Group DRO and conformal are implemented and tested.
+The ChEMBL ablation is complete, and the registered robustness claim is reported
+as a negative result: `shift_robust` is under-covered and does not improve
+worst-family RMSE enough to justify its loss in average accuracy.
 
-**Phase 4 — writing (3–4 weeks).** Draft, then preprint immediately. Topics 3 and 5
-in the proposal document were both flagged as competitive; the date stamp matters.
+**Phase 4 — writing.** Draft and generated tables are complete. Remaining work is
+citation verification, author review, journal formatting, and an optional decision
+about the external re-run track.
 
-Total 3–4 months, consistent with the 3–5 months the proposal estimated. Phase 2
-is the schedule risk: one model took a working session to get as far as a
-reproducible failure, and there are four more.
+The external re-run track remains the schedule risk. It is explicitly excluded
+from headline claims rather than allowed to block the benchmark paper.
 
 **Before writing a word, re-check novelty.** Search arXiv, bioRxiv and ChemRxiv for
 "DTI benchmark leakage", "drug target affinity data leakage audit" and

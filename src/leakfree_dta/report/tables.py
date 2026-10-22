@@ -9,7 +9,7 @@ import pandas as pd
 
 from leakfree_dta import paths
 from leakfree_dta.logging import get_logger
-from leakfree_dta.utils.io import read_json
+from leakfree_dta.utils.io import read_json, read_table
 
 logger = get_logger(__name__)
 
@@ -150,6 +150,51 @@ def noise_floor(dataset: str) -> dict[str, Any]:
                 "fraction_conflicting": statistics.get("fraction_of_replicated_pairs"),
             }
     return {}
+
+
+def robustness_summary(dataset: str, split: str = "leakfree") -> pd.DataFrame:
+    """Table 4: average, worst-family, interval, and selective risk results."""
+    metrics_path = paths.TABLES / f"{dataset}.{split}.metrics.csv"
+    groups_path = paths.TABLES / f"{dataset}.{split}.per_group.csv"
+    selective_path = paths.TABLES / f"{dataset}.{split}.selective.csv"
+    if not metrics_path.exists() or not groups_path.exists():
+        return pd.DataFrame()
+
+    metrics = pd.read_csv(metrics_path)
+    rmse = metrics.loc[metrics["metric"].eq("rmse"), ["model", "estimate"]].rename(
+        columns={"estimate": "rmse"}
+    )
+    groups = pd.read_csv(groups_path)
+    worst = (
+        groups.loc[groups["grouping"].eq("family") & groups["metric"].eq("rmse"), ["model", "worst"]]
+        .rename(columns={"worst": "worst_family_rmse"})
+    )
+    table = rmse.merge(worst, on="model", how="left")
+
+    predictions_root = paths.RUNS / dataset / split
+    interval_rows: list[dict[str, float | str]] = []
+    for model in table["model"]:
+        prediction_path = predictions_root / model / "predictions.parquet"
+        if not prediction_path.exists():
+            continue
+        frame = read_table(prediction_path)
+        if {"y_lower", "y_upper", "y_true"}.issubset(frame.columns):
+            interval_rows.append(
+                {
+                    "model": model,
+                    "coverage": float(
+                        ((frame["y_true"] >= frame["y_lower"]) & (frame["y_true"] <= frame["y_upper"])).mean()
+                    ),
+                    "interval_width": float((frame["y_upper"] - frame["y_lower"]).mean()),
+                }
+            )
+    if interval_rows:
+        table = table.merge(pd.DataFrame(interval_rows), on="model", how="left")
+
+    if selective_path.exists():
+        selective = pd.read_csv(selective_path)[["model", "aurc"]]
+        table = table.merge(selective, on="model", how="left")
+    return table
 
 
 def write_markdown(table: pd.DataFrame, path: str | Path, *, title: str, note: str = "") -> Path:
