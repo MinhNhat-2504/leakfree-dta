@@ -55,23 +55,60 @@ the estimate scales length to the power 1.5, which is a rough stand-in for
 attention over residues. Treat it as an order of magnitude.
 
 Boltz-2 wants considerably more VRAM than the 8 GB laptop GPU this project
-develops on. Options, in rough order of convenience:
+develops on.
 
-- a rented A100 or H100 for a day
-- an institutional cluster allocation
-- Kaggle or Colab, splitting the subset into chunks that fit a session
+### Thirty-five hours is not a sitting
 
-The run is embarrassingly parallel: each YAML is independent, so it can be split
-across sessions or machines and recombined, provided every prediction keeps its
-row key.
+No free platform will give you one. Kaggle allows twelve hours per session and
+around thirty a week; Colab is shorter and less predictable; a rented instance
+is billed by the hour and worth releasing between sittings. The run therefore
+has to survive being stopped, and that is a property of how the work is divided
+rather than something to improvise when a session dies.
+
+```bash
+python scripts/chunk_boltz2_subset.py --session-hours 12
+```
+
+Chunks are packed by *estimated minutes*, not by complex count. Sequence lengths
+here run from under 300 residues to 1,306, so equal-sized chunks would differ
+several-fold in runtime and the long ones would overrun a session sized for the
+average. Each chunk is packed to 75% of the session, leaving room for setup, the
+model download and the final write.
+
+On a 12-hour session that gives four chunks:
+
+| chunk | complexes | est. hours | longest sequence |
+| --- | --: | --: | --: |
+| chunk01 | 189 | 9.0 | 714 |
+| chunk02 | 56 | 9.0 | 1,306 |
+| chunk03 | 78 | 9.0 | 1,052 |
+| chunk04 | 277 | 8.2 | 465 |
+
+Note chunk02: 56 complexes taking as long as chunk04's 277, because it carries
+the longest proteins. Packing by count would have put those in a session that
+could not finish them.
+
+Run one chunk per session, all writing to the same output directory. Progress is
+read from the output files rather than from a state file:
+
+```bash
+python scripts/chunk_boltz2_subset.py --status
+```
+
+A session killed mid-chunk therefore resumes in the right place, and the status
+cannot disagree with what is on disk. Chunks can also run on different machines
+in parallel; they only need to end up in one output directory, and every
+prediction carries its row key.
 
 ## Running it
 
 ```bash
 pip install "boltz>=2.0,<3.0"
 
-boltz predict data/external/chembl_3fam/leakfree/Boltz-2/inputs \
-  --out_dir boltz_out \
+# One chunk per session; see the chunking section above. All chunks write to
+# the same --out_dir, which is what makes the progress check work.
+boltz predict data/external/chembl_3fam/leakfree/Boltz-2/chunks/chunk01 \
+  --out_dir data/external/chembl_3fam/leakfree/Boltz-2/outputs \
   --use_msa_server \
   --diffusion_samples 1
 ```
@@ -88,8 +125,14 @@ and any complex that failed with its reason.
 ## Bringing the results back
 
 ```bash
-python scripts/ingest_boltz2.py --predictions boltz_out --run-metadata run.json
+python scripts/ingest_boltz2.py \
+  --predictions data/external/chembl_3fam/leakfree/Boltz-2/outputs \
+  --run-metadata run.json
 ```
+
+Run it at any point, not only at the end: it accepts whatever is in the output
+directory and records the coverage. Doing so after each session is a cheap way
+to notice a problem three chunks earlier than you otherwise would.
 
 The ingester refuses anything it cannot verify. It checks that each prediction
 maps to a row key in the frozen subset, that no row appears twice, and that the

@@ -64,7 +64,10 @@ def load_predictions(path: Path) -> pd.DataFrame:
 
     records: list[dict[str, object]] = []
     for item in sorted(path.rglob("affinity*.json")):
-        payload = json.loads(item.read_text(encoding="utf-8"))
+        # utf-8-sig, not utf-8: these files arrive from another machine, and a
+        # byte-order mark is exactly the kind of difference that should not
+        # cost a session's worth of predictions.
+        payload = json.loads(item.read_text(encoding="utf-8-sig"))
         value = payload.get("affinity_pred_value", payload.get("affinity_pred"))
         if value is None:
             logger.warning("no affinity value in %s; skipping", item.name)
