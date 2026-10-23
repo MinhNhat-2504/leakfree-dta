@@ -58,10 +58,16 @@ in case the integration is used later for a future version.
    materials) and `draft.md` (Section 8). The grep is the check, not the list --
    it stays correct if a third appears.
 
-2. **Fill the metadata** from the template below. Zenodo renders
-   `creators[].name` verbatim, and Vietnamese names are easily entered
-   family-name-first in one system and given-name-first in another; make Zenodo
-   and the manuscript agree before publishing.
+2. **Fill the metadata** by uploading `paper/zenodo_creators.json` in the
+   creators panel, which is why that file exists: the ORCIDs and the affiliation
+   are then typed once rather than per deposit.
+
+   The name split follows each author's own ORCID record, not the usual
+   Vietnamese reading of the name. ORCID has given `Nhat` with family
+   `Trinh Ngoc Minh`, and given `Linh` with family `Nguyen Thi My`, so Zenodo
+   renders "Trinh Ngoc Minh, Nhat" -- matching the credit name on the ORCID
+   record. That is what Crossref and Scholar match against, so ORCID is the
+   authority here and the manuscript byline already agrees with it.
 
 3. **Freeze and tag.** Working tree clean, full test suite passing, ruff clean,
    and `scripts/reproduce_all.py` completing from a clean checkout. Then:
@@ -110,12 +116,12 @@ themselves, which is what the repository is already built to support.
   "license": "MIT",
   "creators": [
     {
-      "name": "Trinh Ngoc Minh Nhat",
+      "name": "Trinh Ngoc Minh, Nhat",
       "orcid": "0009-0006-9477-9642",
       "affiliation": "Faculty of Information Technology, Van Lang School of Technology, Van Lang University, Ho Chi Minh City, Vietnam"
     },
     {
-      "name": "Nguyen Thi My Linh",
+      "name": "Nguyen Thi My, Linh",
       "orcid": "0000-0003-3990-312X",
       "affiliation": "Faculty of Information Technology, Van Lang School of Technology, Van Lang University, Ho Chi Minh City, Vietnam"
     }

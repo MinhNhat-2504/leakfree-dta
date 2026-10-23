@@ -2,8 +2,8 @@
   {
     "person_or_org": {
       "type": "personal",
-      "given_name": "Ngoc Minh Nhat",
-      "family_name": "Trinh",
+      "given_name": "Nhat",
+      "family_name": "Trinh Ngoc Minh",
       "identifiers": [
         {
           "scheme": "orcid",
@@ -20,8 +20,8 @@
   {
     "person_or_org": {
       "type": "personal",
-      "given_name": "Thi My Linh",
-      "family_name": "Nguyen",
+      "given_name": "Linh",
+      "family_name": "Nguyen Thi My",
       "identifiers": [
         {
           "scheme": "orcid",
