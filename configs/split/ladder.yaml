@@ -77,7 +77,8 @@ splits:
     ligand_axis: random
     protein_axis: random
     temporal_axis: year
-    temporal_cutoff_year: 2019
+    # Train <=2018, validate on 2019--2020, test on 2021+.
+    temporal_cutoff_year: 2020
     temporal_valid_years: 2
     note: >
       The validation fold is the two years before the cutoff, not a random sample
@@ -88,7 +89,8 @@ splits:
     protein_axis: cluster
     protein_identity: 0.30
     temporal_axis: year
-    temporal_cutoff_year: 2019
+    temporal_cutoff_year: 2020
+    temporal_valid_years: 2
     note: >
       Every channel closed at once. The strictest rung, and the one the paper's
       headline numbers are reported on. Expect a large excluded fraction; on small

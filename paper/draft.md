@@ -1,51 +1,43 @@
 # How much of our progress is leakage? A leakage-audited benchmark for drug–target affinity
 
 **Draft status.** The ChEMBL training runs, leakage ladder, model comparison,
-and robustness evaluation are complete. The external published-model
+robustness evaluation, endpoint-matched BindingDB concordance check, and
+retrospective temporal holdout are complete. The external published-model
 reproduction track was not used for the headline claims because it is not yet
-complete. All numerical claims below are tied to generated result artifacts.
+complete. No prospective or wet-lab assay has been performed. All numerical
+claims below are tied to generated result artifacts.
 
 ---
 
 ## Abstract
 
-Benchmarks for drug–target affinity prediction have supported a decade of
-reported improvement. We audit what those benchmarks actually contain. Building
-a curated extract from ChEMBL 37 covering three target families — kinases,
-GPCRs and proteases — we measure, channel by channel, how much information
-crosses the train/test boundary under each splitting rule the field uses, and
-how much reported performance survives when every channel is closed.
+**Background.** Drug–target affinity benchmarks have supported a decade of
+reported improvement, but their train/test boundaries can transmit chemical,
+protein and label information. We audit these channels in a curated ChEMBL 37
+extract covering kinases, GPCRs and proteases, then measure how much performance
+survives when they are closed.
 
-Three findings are independent of any model. First, the labels themselves set a
-floor: across 153,598 pairs measured more than once, the pooled within-pair
-standard deviation is **0.617 log units**, and 23.5% of replicated pairs
-disagree by more than tenfold. Any RMSE below that, on ChEMBL-derived data, is
-smaller than the disagreement among the labels being scored against. Second, pooling IC50 with Ki — standard practice —
-carries a systematic offset of **−0.569 log units**, measured directly on 35,957
-pairs holding both. Third, Bemis–Murcko scaffold splitting [@bemis_1996], the field's usual
-"hard" split, closes almost none of the recoverable leakage, because homologous
-series receive different scaffolds while remaining fingerprint-identical.
+**Results.** Across 153,598 replicated pairs, pooled within-pair standard
+deviation is **0.617 log units** and 23.5% disagree by more than tenfold.
+Pooling IC50 with Ki carries an offset of **−0.569 log units** across 35,957
+pairs containing both endpoints. A random split leaves 14.9% of test rows
+recoverable by lookup and every test protein represented in training; a
+ligand-only shortcut reaches Pearson 0.520. Bemis–Murcko scaffold splitting
+reduces recoverable rows to 8.4%, whereas fingerprint clustering reduces them
+to 1.4%. Holding out target accessions still leaves 78.9% of test rows with a
+training protein above 40% sequence identity. On the leakage-free split,
+XGBoost-ECFP has RMSE **1.240** and Pearson **0.192**, while the additive
+shortcut has RMSE **1.241** and Pearson **0.000**. A DeepDTA reimplementation
+has RMSE **1.293** and Pearson **0.177**. The registered shift-robust baseline
+does not meet its objectives: RMSE is **1.490**, worst-family RMSE is **1.645**,
+and its nominal 90% interval covers **54.5%** of rows.
 
-On the ladder itself: the random split most of this literature reports on leaves
-14.9% of test rows recoverable by lookup and 100% of them targeting a protein
-already seen in training, where a predictor that ignores the protein entirely
-reaches Pearson 0.520. Scaffold splitting halves the recoverable fraction to
-8.4%; fingerprint clustering takes it to 1.4%. Holding out target accessions —
-the usual "protein-cold" split — still leaves 78.9% of test rows with a training
-protein above 40% sequence identity.
-
-On the leakage-free split, the strongest point estimate is the classical
-`xgboost_ecfp` baseline (RMSE **1.240**, Pearson **0.192**), essentially tied
-with the additive shortcut (RMSE **1.241**, Pearson **0.000**) on absolute
-error. DeepDTA reaches Pearson **0.177** but RMSE **1.293**. The proposed
-`shift_robust` model does not support the registered robustness claim: its
-RMSE is **1.490**, its worst-family RMSE is **1.645**, and its nominal 90%
-interval covers only **54.5%** of test rows. The robustness objective and
-conformal head therefore require revision before this can be presented as a
-reliable baseline.
-
-We release the audit as a package, the splits as content-addressed manifests,
-and the per-row predictions of every model we re-ran.
+**Contribution.** We provide a calibrated, channel-specific leakage audit;
+content-addressed split manifests; shortcut probes placed beside interaction
+models; and per-row predictions with cluster-bootstrap evaluation. The results
+quantify which apparent gains survive leakage control and establish a measured
+negative result for the proposed robustness objective rather than claiming
+unsupported reliability.
 
 ---
 
@@ -175,9 +167,9 @@ classification are answering a different question.
 distribution has heavy tails: one pair spans 6.97 log units. A single mis-keyed
 measurement moves a mean and not a median.
 
-The audit runs on the pre-aggregation table and the models train on the
-post-aggregation one, so the noise floor in Section 4 is measured on the data the
-models are actually scored against.
+The audit runs on the pre-aggregation table and the models train and are scored
+on the post-aggregation one. Section 4 therefore reports replicate variability
+as context for label quality, not a lower bound on error against aggregated labels.
 
 ### 2.4 The curated benchmark
 
@@ -196,6 +188,19 @@ Bemis–Murcko scaffolds**, spanning **1976–2025**.
 | pKi | 218,399 |
 | pEC50 | 60,069 |
 | pKd | 20,469 |
+
+### 2.5 BindingDB concordance and provenance overlap
+
+Endpoint-matched comparison found **10,521** ligand-target-endpoint combinations
+shared with the supplied BindingDB release (Pearson **0.9493**, RMSE **0.4016**
+log units); **2.86%** differed by more than one log unit. This is a database
+concordance check, not independent experimental validation. Among the **9,163**
+shared combinations for which a PubMed identifier could be recovered in both
+sources, **90.31%** shared at least one publication. BindingDB also labels some
+records as imported from ChEMBL. The near-zero median difference (**0.0029** log
+units) is therefore consistent with overlapping provenance and must not be
+presented as an independent physical noise floor. Here 0.0029 is the median
+absolute difference, not the signed median difference.
 
 ---
 
@@ -224,9 +229,9 @@ accession means little when a 90%-identical paralogue remains in training.
 
 **Temporal.** Test rows published no later than the newest training row.
 
-**Label.** Replicate disagreement and affinity-type mixing. Not leakage, but it
-bounds what any model can achieve, and a reported RMSE below that bound means
-something other than accuracy.
+**Label.** Replicate disagreement and affinity-type mixing. These describe
+measurement heterogeneity rather than train/test leakage. Their relationship to
+prediction error depends on the endpoint and aggregation procedure.
 
 ### 3.2 The shortcut probe
 
@@ -272,7 +277,7 @@ does it in seconds. The two agree to within 0.002 on planted identities of 0.95,
 
 ---
 
-## 4. Label quality: the floor beneath every reported RMSE
+## 4. Label quality: replicate variability and endpoint mixing
 
 Measured on the pre-aggregation table, over **153,598 pairs with more than one
 measurement**:
@@ -284,18 +289,18 @@ measurement**:
 | largest within-pair range | 6.97 log units |
 | maximum replicates for one pair | 198 |
 
-The pooled standard deviation is a floor on the RMSE any model can achieve on
-*this* data. A model reporting 0.5 on a test set drawn from it is reporting a
-number smaller than the disagreement among the labels it is scored against.
+The pooled standard deviation describes disagreement among individual records.
+It is not an estimated irreducible RMSE for this benchmark: test labels are
+replicate medians, replication counts differ, and assay and endpoint conditions
+are heterogeneous. A lower bound would require a measurement-error model and an
+estimate appropriate to those aggregated labels. In particular, an RMSE below
+0.617 would not by itself demonstrate leakage.
 
-The qualifier matters and is easy to drop. 0.617 is this extract's floor, not a
-universal one; the low RMSEs often quoted in this literature are mostly on Davis
-and KIBA, which have their own noise characteristics and would need their own
-measurement. The comparison we can make is the one within this benchmark, and
-there the gap runs the other way: no model we tested comes near the floor. On
-the leakage-free split every one sits between 1.24 and 1.33, roughly double it.
-The labels are noisy and the models are further from them than the noise
-explains.
+This estimate also cannot be transferred to Davis or KIBA, whose noise
+characteristics would need their own measurement. The ten core models have
+leakage-free RMSEs between 1.24 and 1.49. These values establish prediction error
+on the curated benchmark, but the present analysis does not decompose that error
+into assay noise and model error.
 
 Pooling affinity types onto one p-scale is standard practice and standard
 criticism. We measure its cost directly on the 35,957 pairs carrying more than
@@ -392,22 +397,46 @@ is the paper's single most important editorial choice.
 ### 5.3 Re-running published models
 
 Inclusion and exclusion criteria were fixed before any model was run and are
-committed in the repository. Six models are targeted, spanning 2018–2025.
+committed in the repository. Six candidates were registered, spanning 2018–2025.
 Failures are reported with a reason and a log tail rather than omitted: the
 models hardest to reproduce are disproportionately the oldest, so dropping them
 would bias the re-measured trend upward at precisely the end that anchors it.
 
-Only the data and the split are replaced; architecture, optimiser and
-hyperparameters stay as published. Any departure is declared. For DeepDTA, six
-literal compatibility patches were needed — the TensorFlow 1 session API, the
-Keras `set_session`, `BatchNormalization` and `merge` imports — each a mechanical
-rename forced by framework evolution, none touching the model, all recorded.
-Patches apply exact-match-once, so an upstream change stops the run rather than
-landing on the wrong line.
+Eligibility review excluded MolTrans because its released implementation is a
+binary classifier with no regression head, and excluded the proposed
+ChemBERTa-2 + ESM-2 entry because it is not itself a published DTA regression
+model. The local script previously carrying that name was invalidated after code
+review showed that it used ECFP4 and dipeptide frequencies rather than either
+pretrained model.
 
-Boltz-2 is run on a stratified subset rather than the full benchmark: it predicts
-a structure per complex at minutes of GPU time each. Its `coverage_scope` is
-recorded so no figure can silently mix subset and full-benchmark numbers.
+Only the data and split may be replaced; architecture, optimiser and
+hyperparameters otherwise stay as published, with departures declared. DeepDTA
+requires literal TensorFlow/Keras compatibility patches, all recorded and tested
+as exact replacements. A CUDA run of the upstream GraphDTA GINConvNet completed
+on the full leak-free split (195,322 train, 915 validation, 4,903 test rows) using
+an explicit split-aware loader. Checkpoint selection used validation only, with
+early stopping (best epoch 9; 25-epoch patience; 34 epochs run) instead of the
+upstream benchmark script's test-set selection. On test, GraphDTA reached RMSE
+1.324 and Pearson r 0.156 (RTX 4060 Laptop GPU; upstream head recorded as
+`6162245c6776684b391d30610850fe7077478435`). This is one external model result,
+not a complete published-model rerun track. PerceiverCPI has since completed on
+CUDA (test RMSE 1.328, Pearson r 0.108); its outcome and the DeepDTA limitation
+remain in the durable attempt log. Both completed external models produced 4,903
+aligned test predictions; their descriptive point estimates are separate from
+the ten-model, cluster-bootstrap comparison in Table 2.
+
+The upstream DeepDTA rerun remains incomplete as of 24 October 2026. The CUDA
+attempt uses batch 64 and float32 input arrays, with compatibility patches and
+restart checkpoints recorded separately from the core reimplementation. A code
+audit also identified a protocol incompatibility: upstream `general_nfold_cv`
+passes the final test fold as `validation_data`, and early stopping monitors
+`val_loss`. Completing that unmodified evaluation would therefore use test labels
+to determine training duration. A comparable benchmark result requires selection
+on the designated validation fold and a single evaluation on the untouched test
+fold; no partial upstream DeepDTA output is reported as such a result here.
+
+Boltz-2 has not been run. It would require a separately frozen stratified subset
+and an explicit compute budget. No Boltz-2 score or coverage estimate is included.
 
 ### 5.4 Evaluation protocol
 
@@ -426,11 +455,10 @@ overall, macro-averaged across families, and worst-group.
 ### 5.5 The shift-robust baseline
 
 Group DRO over protein clusters with a Mondrian conformal head [@sagawa_2020;
-@romano_2020]. Not claimed to
-be the most accurate model — the worst-group objective trades average accuracy
-for uniformity, and the trade is the point. Claimed to have the lowest
-worst-group error, intervals whose coverage holds within each protein group
-rather than only on average, and a better risk–coverage curve.
+@romano_2020]. The registered objectives were lower worst-group error,
+within-group interval coverage, and a better risk–coverage curve. These are
+hypotheses evaluated in Section 6.5, not properties established by construction;
+the measured results do not support them.
 
 Conformal's guarantee assumes exchangeability, which a protein-cluster or
 temporal split deliberately breaks. We report empirical coverage per split rather
@@ -500,7 +528,7 @@ We registered before measuring that the dominant channel would differ by family:
 protein identity for kinases, ligand similarity for GPCRs, label inconsistency
 for proteases.
 
-| family | protein ≥40% under accession holdout | near-duplicate ligands, random split | replicate conflict rate | noise floor |
+| family | protein ≥40% under accession holdout | near-duplicate ligands, random split | replicate conflict rate | replicate SD |
 | --- | --: | --: | --: | --: |
 | kinase | **84.2%** | 22.2% | 20.5% | 0.559 |
 | GPCR | 74.6% | 24.3% | 27.2% | 0.674 |
@@ -513,7 +541,7 @@ narrow: 84.2% against 74.6% and 76.8%. Accession holdout fails for every family,
 not distinctively for kinases, and the conserved ATP site is a weaker explanation
 than we expected.
 
-Proteases are worst on label quality, as predicted — a 0.733 log-unit noise floor
+Proteases are worst on label quality, as predicted — a 0.733 log-unit replicate SD
 against 0.559 for kinases, and the highest conflict rate.
 
 The GPCR prediction is wrong. We expected GPCRs to dominate the ligand axis
@@ -533,7 +561,7 @@ match.
 Table 3 and Figure 2 report Pearson correlation for every completed model on
 every rung. The headline pattern is a collapse under simultaneous coldness.
 ERM-MLP falls from **0.828** on `random` to **0.125** on `leakfree`, DeepDTA
-from **0.789** to **0.177**, and XGBoost from **0.761** to **0.192**. The
+reimplementation from **0.789** to **0.177**, and XGBoost from **0.761** to **0.192**. The
 additive shortcut falls from **0.474** to **0.000**. This is not evidence that
 all predictive signal disappears: the strict setting changes both the chemical
 and target distributions, and the remaining correlations are small relative to
@@ -546,7 +574,7 @@ Table 2 includes all ten registered models, including the degenerate predictors.
 It uses the registered cluster bootstrap over **114 target groups** with
 **1,000 resamples**. The best RMSE is XGBoost (**1.240**, 95% interval
 **[1.160, 1.325]**), followed by the
-additive baseline (**1.241**). DeepDTA is not competitive on this split
+additive baseline (**1.241**). The DeepDTA reimplementation has higher point-estimate RMSE on this split
 (RMSE **1.293**, Pearson **0.177**), while the MLP variants and `shift_robust`
 are worse than the additive predictor on RMSE. The paired comparison against
 `additive_bias` is reported in the companion comparisons table; the important
@@ -573,6 +601,17 @@ model re-runs are not complete and the available results are not comparable
 enough to justify a publication-year trend. The omission is intentional rather
 than a missing analysis; the attempt-log machinery remains in the supplement.
 
+### 6.7 Retrospective temporal holdout
+
+The temporal manifest is explicit: training records end in **2018**, validation
+uses **2019–2020**, and **107,527** test pairs come from **2021–2025**. On this
+test set XGBoost-ECFP reaches Pearson **0.3914** and RMSE **1.1982**.
+Year-specific Pearson correlation ranges from **0.4337** in 2021 to **0.3535**
+in 2025, without a monotone decline across the intermediate years. This is a
+retrospective temporal simulation because all labels existed when the analysis
+was designed. It is not prospective validation and it is not an experimental
+assay.
+
 ---
 
 ## 7. Discussion
@@ -593,7 +632,7 @@ audit. A split name such as “scaffold” is not sufficient: the scaffold rung
 still leaves **8.41%** recoverable rows, compared with **1.42%** after
 fingerprint clustering.
 
-**For model authors.** Report the noise floor, a target-only or additive
+**For model authors.** Report replicate variability, a target-only or additive
 baseline, and cluster-bootstrap intervals. Absolute performance without these
 references cannot distinguish interaction modelling from memorisation.
 
@@ -618,7 +657,19 @@ predict bounds are out of scope here.
 with effort we did not spend. We consider the alternative worse: re-tuning
 someone else's model measures our tuning budget.
 
-**Subset evaluation for Boltz-2**, recorded in its coverage scope.
+**Incomplete external-model coverage.** GraphDTA and PerceiverCPI have completed
+the strict-split evaluation, but upstream DeepDTA has not produced an eligible
+untouched-test result and Boltz-2 has not been run. This limits conclusions about
+published architectures and precludes a publication-year progress curve.
+
+**Cross-source independence.** BindingDB and ChEMBL largely point to the same
+publications for their shared pairs; the cross-source analysis measures database
+concordance, not independent assay replication.
+
+**Prospective and experimental validation.** Neither has been performed. The
+repository contains a protocol that can be frozen before future labels are
+acquired, but executing it requires serialized model weights, author approval,
+and either a future database release or an independent laboratory.
 
 ---
 

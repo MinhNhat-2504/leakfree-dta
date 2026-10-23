@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import pickle
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -62,6 +63,11 @@ TF2_PATCHES: tuple[tuple[str, str, str], ...] = (
         "tf.set_random_seed moved to tf.compat.v1 in TensorFlow 2.0",
     ),
     (
+        "tf.matrix_band_part(",
+        "tf.linalg.band_part(",
+        "tf.matrix_band_part moved to tf.linalg.band_part in TensorFlow 2.0",
+    ),
+    (
         "sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)",
         "sess = tf.compat.v1.Session(graph=tf.compat.v1.get_default_graph(), config=session_conf)",
         "tf.Session and tf.get_default_graph moved to tf.compat.v1 in TensorFlow 2.0",
@@ -85,8 +91,18 @@ TF2_PATCHES: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "from keras.utils import plot_model",
-        "try:\n    from keras.utils import plot_model\nexcept ImportError:  # pydot/graphviz are optional and unused here\n    plot_model = None",
+        "def plot_model(*args, **kwargs):\n    return None",
         "plot_model requires pydot and graphviz, which the model does not need",
+    ),
+    (
+        "def plotLoss(history, batchind, epochind, param3ind, foldind):",
+        "def plotLoss(history, batchind, epochind, param3ind, foldind):\n    return None",
+        "matplotlib 3.6+ removed papertype and frameon arguments from savefig used by plotLoss",
+    ),
+    (
+        "predicted_labels = gridmodel.predict([np.array(val_drugs), np.array(val_prots) ])\n                    loss, rperf2 = gridmodel.evaluate(([np.array(val_drugs),np.array(val_prots) ]), np.array(val_Y), verbose=0)",
+        "predicted_labels = gridmodel.predict([np.array(val_drugs), np.array(val_prots) ])\n                    try:\n                        import pandas as _pd\n                        _pd.DataFrame({'y_pred': np.array(predicted_labels).flatten()}).to_csv(os.path.join(FLAGS.log_dir, 'predictions.csv'), index=False)\n                    except Exception:\n                        pass\n                    loss, rperf2 = gridmodel.evaluate(([np.array(val_drugs),np.array(val_prots) ]), np.array(val_Y), verbose=0)",
+        "DeepDTA by default only logs summary metrics to stdout; this mechanical patch dumps per-row predictions to predictions.csv for evaluation alignment",
     ),
 )
 
@@ -188,16 +204,26 @@ class DeepDTAAdapter:
             cols = frame[schema.TARGET_KEY].map(target_col).to_numpy()
             affinity[rows, cols] = pd.to_numeric(frame[schema.Y], errors="coerce").to_numpy()
 
+        labeled_rows, labeled_cols = np.where(np.isfinite(affinity))
+        pair_index = {
+            (int(row), int(col)): index
+            for index, (row, col) in enumerate(zip(labeled_rows, labeled_cols, strict=True))
+        }
+
         def flat_indices(frame: pd.DataFrame) -> list[int]:
             rows = frame[schema.LIGAND_KEY].map(ligand_row).to_numpy()
             cols = frame[schema.TARGET_KEY].map(target_col).to_numpy()
-            # DeepDTA indexes the non-NaN cells in row-major order, so a flat
-            # index is row * n_cols + col.
-            return [int(r * n_cols + c) for r, c in zip(rows, cols, strict=True)]
+            # DeepDTA indexes the observed cells returned by np.where(Y), not
+            # the full matrix. Its fold files therefore contain positions in
+            # this compact row-major list.
+            try:
+                return [pair_index[(int(r), int(c))] for r, c in zip(rows, cols, strict=True)]
+            except KeyError as exc:
+                raise ValueError(f"split row is absent from the finite affinity matrix: {exc}") from exc
 
         train_flat = flat_indices(combined)
         test_flat = flat_indices(test)
-        self._verify_roundtrip(affinity, n_cols, test, test_flat)
+        self._verify_roundtrip(affinity, test, test_flat)
 
         data_dir = workspace.data
         folds_dir = data_dir / "folds"
@@ -245,7 +271,7 @@ class DeepDTAAdapter:
 
     @staticmethod
     def _verify_roundtrip(
-        affinity: np.ndarray, n_cols: int, test: pd.DataFrame, test_flat: list[int]
+        affinity: np.ndarray, test: pd.DataFrame, test_flat: list[int]
     ) -> None:
         """Check the matrix encoding reproduces the test labels exactly.
 
@@ -254,7 +280,8 @@ class DeepDTAAdapter:
         catastrophic to miss.
         """
         expected = pd.to_numeric(test[schema.Y], errors="coerce").to_numpy(dtype=float)
-        recovered = np.array([affinity[i // n_cols, i % n_cols] for i in test_flat])
+        rows, cols = np.where(np.isfinite(affinity))
+        recovered = affinity[rows[test_flat], cols[test_flat]]
         if not np.allclose(expected, recovered, equal_nan=True):
             n_bad = int(np.sum(~np.isclose(expected, recovered, equal_nan=True)))
             raise ValueError(
@@ -271,7 +298,7 @@ class DeepDTAAdapter:
 
         # Values are the paper's reported best configuration for Davis.
         return [
-            "python",
+            sys.executable,
             "source/run_experiments.py",
             "--num_windows", "32",
             "--smi_window_lengths", "4",

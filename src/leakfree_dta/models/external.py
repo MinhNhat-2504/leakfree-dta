@@ -125,8 +125,13 @@ REGISTRY: tuple[ExternalModelSpec, ...] = (
         reported_metric="auroc",
         reported_benchmark="bindingdb",
         reported_split="random",
-        notes="Reports classification metrics; the regression head has to be used "
-        "for a comparable number, which is an adaptation to record.",
+        status="excluded",
+        failure_reason=(
+            "fails the pre-registered regression inclusion criterion: the released "
+            "implementation is binary CPI classification with sigmoid/BCELoss and "
+            "contains no regression head"
+        ),
+        notes="A regression conversion would be a new reimplementation, not a re-run.",
     ),
     ExternalModelSpec(
         name="PerceiverCPI",
@@ -149,8 +154,13 @@ REGISTRY: tuple[ExternalModelSpec, ...] = (
         reported_metric="pearson",
         reported_benchmark="various",
         reported_split="various",
-        notes="Stands in for the 'pretrained embeddings' family. Fast to run, which "
-        "makes it a useful control for whether scale alone closes the gap.",
+        status="excluded",
+        failure_reason=(
+            "not a published DTA regression model and therefore fails the inclusion "
+            "criterion; the local script previously carrying this name actually used "
+            "ECFP4 and dipeptide frequencies, not pretrained embeddings"
+        ),
+        notes="A genuine frozen-embedding baseline may be added as a new ablation, but not presented as a published-model re-run.",
     ),
     ExternalModelSpec(
         name="Boltz-2",

@@ -111,6 +111,12 @@ def load(
         out["protein_class"] = raw["target_protein_class"]
     if "target_uniprot_keywords" in raw.columns:
         out["uniprot_keywords"] = raw["target_uniprot_keywords"]
+    # Keep publication and source identifiers needed to distinguish a genuinely
+    # independent BindingDB record from the same article imported into both
+    # databases.  schema.finalize deliberately preserves extra columns.
+    for column in ("molecule_chembl_id", "target_chembl_id", "doi", "pubmed_id"):
+        if column in raw.columns:
+            out[column] = raw[column]
 
     return out.reset_index(drop=True)
 

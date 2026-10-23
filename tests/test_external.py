@@ -100,9 +100,9 @@ class TestDeepDTADataFormat:
             affinity = pickle.load(handle)
         index_map = json.loads((workspace.data / "index_map.json").read_text(encoding="utf-8"))
 
-        n_cols = index_map["n_targets"]
+        labeled_rows, labeled_cols = np.where(np.isfinite(affinity))
         recovered = np.array(
-            [affinity[i // n_cols, i % n_cols] for i in index_map["test_flat_indices"]]
+            [affinity[labeled_rows[i], labeled_cols[i]] for i in index_map["test_flat_indices"]]
         )
         expected = pd.to_numeric(test[schema.Y], errors="coerce").to_numpy(dtype=float)
         assert np.allclose(recovered, expected, equal_nan=True)
@@ -151,6 +151,36 @@ class TestDeepDTADataFormat:
 
 
 class TestHarness:
+    def test_declared_ineligible_adapter_is_skipped_without_running(self, aggregated, tmp_path):
+        class Ineligible:
+            name = "ineligible"
+            repository = ""
+            commit = None
+            adaptations = []
+            skip_reason = "published code has no regression objective"
+
+            def write_data(self, workspace, train, valid, test):
+                raise AssertionError("skipped adapter must not prepare data")
+
+            def command(self, workspace):
+                raise AssertionError("skipped adapter must not run")
+
+            def collect(self, workspace, test):
+                raise AssertionError("skipped adapter must not collect")
+
+        outcome = rerun_model(
+            Ineligible(),
+            aggregated.head(50),
+            aggregated.head(10),
+            aggregated.head(20),
+            dataset="t",
+            split="s",
+            workspace_root=tmp_path,
+        )
+
+        assert outcome.status == "skipped"
+        assert "no regression" in outcome.reason
+
     def test_a_failing_command_produces_an_outcome_not_an_exception(self, aggregated, tmp_path):
         """A model that will not run is data for the attempt log, not a crash."""
 

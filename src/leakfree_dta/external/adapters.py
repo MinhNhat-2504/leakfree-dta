@@ -19,6 +19,7 @@ reimplementation as a re-run of the original.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,6 +44,7 @@ def write_standard_csv(workspace: RerunWorkspace, train, valid, test) -> dict[st
     """
     columns = [
         schema.ROW_KEY,
+        schema.LIGAND_KEY,
         schema.SMILES,
         schema.TARGET_KEY,
         schema.TARGET_SEQUENCE,
@@ -70,15 +72,45 @@ class OriginalRepoAdapter:
     adaptations: list[str] = field(default_factory=list)
     prediction_file: str = "predictions.csv"
     prediction_column: str = "y_pred"
+    skip_reason: str | None = None
 
     def write_data(self, workspace: RerunWorkspace, train, valid, test) -> None:
+        if self.name == "PerceiverCPI":
+            for name, frame in (("train", train), ("valid", valid), ("test", test)):
+                output = pd.DataFrame(
+                    {
+                        "smiles": frame[schema.SMILES].to_numpy(),
+                        "sequence": frame[schema.TARGET_SEQUENCE].to_numpy(),
+                        "y": pd.to_numeric(frame[schema.Y], errors="coerce").to_numpy(),
+                    }
+                )
+                write_table(output, workspace.data / f"{name}.csv")
+            return
+        if self.name == "MolTrans":
+            bdb_dir = workspace.repo / "dataset" / "BindingDB"
+            bdb_dir.mkdir(parents=True, exist_ok=True)
+            for name, frame in (("train", train), ("val", valid), ("test", test)):
+                output = pd.DataFrame(
+                    {
+                        "SMILES": frame[schema.SMILES].to_numpy(),
+                        "Target Sequence": frame[schema.TARGET_SEQUENCE].to_numpy(),
+                        "Label": pd.to_numeric(frame[schema.Y], errors="coerce").to_numpy(),
+                    }
+                )
+                output.to_csv(bdb_dir / f"{name}.csv")
+            return
         write_standard_csv(workspace, train, valid, test)
 
     def command(self, workspace: RerunWorkspace) -> list[str]:
-        return [
-            token.replace("{data}", str(workspace.data)).replace("{output}", str(workspace.output))
+        command = [
+            token.replace("{repo}", str(workspace.repo))
+            .replace("{data}", str(workspace.data))
+            .replace("{output}", str(workspace.output))
             for token in self.entrypoint
         ]
+        if command and command[0] == "python":
+            command[0] = sys.executable
+        return command
 
     def collect(self, workspace: RerunWorkspace, test: pd.DataFrame) -> np.ndarray:
         path = workspace.output / self.prediction_file
@@ -107,7 +139,7 @@ class OriginalRepoAdapter:
         return frame[self.prediction_column].to_numpy(dtype=float)
 
 
-#: The five models named in the pre-registered target list, as adapters.
+#: The four models named in the pre-registered target list, as adapters.
 #:
 #: Commits are pinned where a release exists. Where the field is ``None`` the
 #: harness records whatever head it obtained, so the run remains reproducible
@@ -120,29 +152,64 @@ ADAPTERS: dict[str, object] = {
         name="GraphDTA",
         repository="https://github.com/thinng/GraphDTA",
         commit=None,
-        entrypoint=["python", "training.py", "0", "0", "0"],
+        entrypoint=[
+            sys.executable,
+            str(Path(__file__).resolve().parents[3] / "scripts" / "run_graphdta_split.py"),
+            "--repo",
+            "{repo}",
+            "--data",
+            "{data}",
+            "--output",
+            "{output}",
+        ],
         adaptations=[
-            "Data supplied from our split rather than the packaged folds.",
+            "Original GraphDTA GINConvNet, atom/protein encodings, and learning rate "
+            "are retained; a split-aware loader replaces the Davis/KIBA-only loader.",
+            "Training runs on CUDA when available. Checkpoint selection uses the "
+            "provided validation fold and the test fold is evaluated once at the end, "
+            "avoiding the upstream script's test-set checkpoint selection.",
+            "Early stopping is capped at 1000 epochs with patience 25 to make the "
+            "large project split tractable; the upstream benchmark setting is 1000.",
         ],
     ),
     "MolTrans": OriginalRepoAdapter(
         name="MolTrans",
         repository="https://github.com/kexinhuang12345/MolTrans",
         commit=None,
-        entrypoint=["python", "train.py", "--task", "custom"],
-        adaptations=[
-            "Data supplied from our split rather than the packaged folds.",
-            "The published model reports classification metrics; its regression head "
-            "is used here so the number is comparable to the others.",
-        ],
+        entrypoint=["python", "train.py", "--task", "bindingdb", "--epochs", "10"],
+        adaptations=[],
+        skip_reason=(
+            "ineligible for the regression comparison: the published repository implements "
+            "binary CPI classification with sigmoid/BCELoss and has no regression head; "
+            "converting it would be a new reimplementation, not a published-model re-run"
+        ),
     ),
     "PerceiverCPI": OriginalRepoAdapter(
         name="PerceiverCPI",
         repository="https://github.com/dmis-lab/PerceiverCPI",
         commit=None,
-        entrypoint=["python", "train.py", "--data_path", "{data}/train.csv"],
+        entrypoint=[
+            sys.executable,
+            str(Path(__file__).resolve().parents[3] / "scripts" / "run_perceiver_split.py"),
+            "--repo",
+            "{repo}",
+            "--data",
+            "{data}",
+            "--output",
+            "{output}",
+        ],
+        prediction_file="test_preds.csv",
+        prediction_column="y",
         adaptations=[
             "Data supplied from our split rather than the packaged folds.",
+            "Regression mode and explicit validation/test paths supplied because the "
+            "published CLI requires dataset-type metadata for a custom extract.",
+            "Batch size is 16 to fit the available 8 GB CUDA GPU (the repository's "
+            "documented batch size 50 OOMed during backward on the full split).",
+            "TensorBoard's optional event writer and worker processes are disabled "
+            "because Windows sandbox pipe creation is denied. Molecular caching is "
+            "disabled to stay within host RAM; deterministic features are generated "
+            "on demand while model training/inference runs on CUDA.",
         ],
     ),
 }

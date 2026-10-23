@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from leakfree_dta import paths
 from leakfree_dta.external.adapters import ADAPTERS, available_adapters
-from leakfree_dta.external.harness import rerun_model, write_attempt_log
+from leakfree_dta.external.harness import rerun_model, write_saved_attempt_log
 from leakfree_dta.logging import get_logger, setup_logging
 from leakfree_dta.splits.manifest import apply_manifest, load_manifest
 from leakfree_dta.utils.io import read_table
@@ -74,7 +74,8 @@ def main() -> int:
             print(f"  {adapter.name}")
             print(f"    repo        {adapter.repository}")
             print(f"    commit      {adapter.commit or '(default head, recorded after clone)'}")
-            print(f"    entrypoint  {' '.join(adapter.entrypoint)}")
+            entrypoint = getattr(adapter, "entrypoint", ["(adapter-specific command)"])
+            print(f"    entrypoint  {' '.join(entrypoint)}")
             for adaptation in adapter.adaptations:
                 print(f"    adaptation  {adaptation}")
             print()
@@ -113,7 +114,9 @@ def main() -> int:
         else:
             print(f"  {outcome.status}: {outcome.reason[:200]}")
 
-    path = write_attempt_log(outcomes, args.dataset, args.split)
+    path = write_saved_attempt_log(
+        args.dataset, args.split, model_names=available_adapters()
+    )
 
     succeeded = [o for o in outcomes if o.status == "ok"]
     print(f"\n{'=' * 72}")

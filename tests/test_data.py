@@ -36,6 +36,32 @@ class TestSchema:
         assert pairs.equals(synthetic_df[schema.PAIR_KEY])
 
 
+class TestBindingDBCrossSource:
+    def test_cross_source_matching_keeps_affinity_endpoints_separate(self):
+        from leakfree_dta.data.sources.bindingdb import cross_source_disagreement
+
+        chembl = pd.DataFrame(
+            {
+                schema.PAIR_KEY: ["L||T", "L||T"],
+                schema.Y_TYPE: ["pKi", "pIC50"],
+                schema.Y: [8.0, 6.0],
+            }
+        )
+        bindingdb = pd.DataFrame(
+            {
+                schema.PAIR_KEY: ["L||T", "L||T"],
+                schema.Y_TYPE: ["pKi", "pIC50"],
+                schema.Y: [8.2, 6.1],
+            }
+        )
+
+        result = cross_source_disagreement(chembl, bindingdb)
+
+        assert len(result) == 2
+        assert set(result[schema.Y_TYPE]) == {"pKi", "pIC50"}
+        assert np.allclose(sorted(result["abs_delta"]), [0.1, 0.2])
+
+
 class TestUnitConversion:
     """``pX = -log10([M])`` is the one conversion the whole benchmark rests on."""
 

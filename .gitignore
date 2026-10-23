@@ -51,3 +51,6 @@ desktop.ini
 # Cloned external repositories and their workspaces. Large, and reconstructable
 # from the pinned commit recorded in each run's provenance.
 data/external/**/repo/
+
+# Continue IDE agent config: local tooling, not project source.
+.continue/

@@ -257,6 +257,11 @@ SPLIT_LADDER: tuple[SplitSpec, ...] = (
         ligand_axis="random",
         protein_axis="random",
         temporal_axis="year",
+        # Train through 2018, tune on 2019--2020, and evaluate on 2021+.
+        # This is explicit rather than the data-dependent 80th percentile so a
+        # refreshed ChEMBL release cannot silently move the boundary.
+        temporal_cutoff_year=2020,
+        options={"temporal_valid_years": 2},
     ),
     SplitSpec(
         name="leakfree",
@@ -264,5 +269,7 @@ SPLIT_LADDER: tuple[SplitSpec, ...] = (
         protein_axis="cluster",
         protein_identity=0.30,
         temporal_axis="year",
+        temporal_cutoff_year=2020,
+        options={"temporal_valid_years": 2},
     ),
 )

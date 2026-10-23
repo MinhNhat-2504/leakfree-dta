@@ -17,7 +17,6 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
-from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from leakfree_dta.logging import get_logger
 
@@ -103,6 +102,7 @@ def _one_scaffold(smiles: str | None, *, generic: bool) -> str | None:
     if mol is None:
         return None
     try:
+        from rdkit.Chem.Scaffolds import MurckoScaffold
         scaffold = MurckoScaffold.GetScaffoldForMol(mol)
         if generic:
             scaffold = MurckoScaffold.MakeScaffoldGeneric(scaffold)

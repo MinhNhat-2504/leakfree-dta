@@ -27,7 +27,7 @@ import pandas as pd
 from leakfree_dta import paths
 from leakfree_dta.data import schema
 from leakfree_dta.logging import get_logger
-from leakfree_dta.utils.io import write_json, write_table
+from leakfree_dta.utils.io import read_json, write_json, write_table
 
 logger = get_logger(__name__)
 
@@ -242,6 +242,10 @@ def rerun_model(
         write_json(outcome.to_dict(), root / "outcome.json")
         return outcome
 
+    skip_reason = getattr(adapter, "skip_reason", None)
+    if skip_reason:
+        return finish("skipped", str(skip_reason))
+
     # --- obtain the source -------------------------------------------------
     if not skip_clone and adapter.repository:
         try:
@@ -355,10 +359,25 @@ def _log_tail(path: Path, n_chars: int = 400) -> str:
     return tail or "(empty log)"
 
 
-def write_attempt_log(outcomes: list[RerunOutcome], dataset: str, split: str) -> Path:
-    """The table that ships with the paper, successes and failures together."""
-    table = pd.DataFrame([outcome.to_dict() for outcome in outcomes])
-    path = write_table(table, paths.TABLES / f"{dataset}.{split}.rerun_attempts.csv")
+def write_attempt_log(
+    outcomes: list[RerunOutcome], dataset: str, split: str, *, merge_existing: bool = True
+) -> Path:
+    """Write the paper's attempt log, preserving models from earlier invocations.
+
+    External runs are often launched one model at a time.  Replacing the table on
+    every partial invocation silently erased earlier failures and successes, so
+    rows are now merged by model with the newest outcome taking precedence.
+    """
+    current = pd.DataFrame([outcome.to_dict() for outcome in outcomes])
+    path = paths.TABLES / f"{dataset}.{split}.rerun_attempts.csv"
+    if merge_existing and path.exists():
+        previous = pd.read_csv(path)
+        table = pd.concat([previous, current], ignore_index=True, sort=False)
+        table = table.drop_duplicates(subset=["model"], keep="last")
+    else:
+        table = current
+    table = table.sort_values("model", kind="stable").reset_index(drop=True)
+    path = write_table(table, path)
 
     counts = table["status"].value_counts().to_dict() if len(table) else {}
     logger.info("attempt log: %s -> %s", counts, path.name)
@@ -368,4 +387,22 @@ def write_attempt_log(outcomes: list[RerunOutcome], dataset: str, split: str) ->
             "points to support a trend claim",
             counts.get("ok", 0),
         )
+    return path
+
+
+def write_saved_attempt_log(
+    dataset: str, split: str, *, model_names: list[str] | None = None
+) -> Path:
+    """Rebuild an attempt log from durable per-workspace ``outcome.json`` files."""
+    root = paths.EXTERNAL / dataset / split
+    rows = []
+    for outcome_path in sorted(root.glob("*/outcome.json")):
+        row = read_json(outcome_path)
+        if model_names is None or row.get("model") in model_names:
+            rows.append(row)
+    table = pd.DataFrame(rows)
+    if len(table):
+        table = table.drop_duplicates(subset=["model"], keep="last").sort_values("model")
+    path = write_table(table, paths.TABLES / f"{dataset}.{split}.rerun_attempts.csv")
+    logger.info("rebuilt attempt log from %d saved outcomes", len(table))
     return path

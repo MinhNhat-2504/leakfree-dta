@@ -62,9 +62,10 @@ published log with row counts, so a reader who disagrees with one can see its si
 Three families and why they were chosen — the differential-failure argument, stated
 here as a hypothesis and tested in Section 4.
 
-Cross-source consistency: pairs present in both ChEMBL and BindingDB, and how far
-apart the two curated databases put them. This sets a floor on achievable accuracy
-that is independent of any model, and it has not been published.
+Cross-source concordance: endpoint-matched pairs present in both ChEMBL and
+BindingDB, how far the curated values differ, and whether they point to the same
+publication. The measured overlap is mainly shared-publication provenance, so it
+cannot be interpreted as independent assay replication or a physical noise floor.
 
 ### 3. The audit
 
@@ -150,30 +151,36 @@ fraction because nobody has measured it.
   it, so nothing already computed with the fallback can be mistaken for a
   publication number.
 - `scripts/download_chembl.py` and `scripts/extract_chembl.py` are written and
-  linted. The SQL in `sql/chembl_activities.sql` has not yet run against a real
-  release.
+  linted. The SQL in `sql/chembl_activities.sql` ran against ChEMBL 37; the raw
+  metadata records the database path, extraction time, row counts, and query.
 - The extract was downloaded, queried, curated, split with MMseqs2 clustering,
   and re-audited. Released artefacts record the source release and content
-  digests. BindingDB cross-source validation is not part of this paper.
+  digests. Endpoint-matched BindingDB concordance is complete; PMID analysis
+  shows that 90.31% of comparable shared pairs use at least one common
+  publication, so it is reported as provenance overlap rather than independent
+  validation or a physical noise floor.
 
 **Phase 2 — the re-runs.** *Harness complete; external published-model track
-deferred.*
+incomplete and excluded from headline claims.*
 
 - `leakfree_dta.external` clones at a pinned commit, lays out data, runs,
   collects, scores, and writes the attempt log. Verified end to end against the
   real DeepDTA repository: it cloned, ran, failed, and produced a correctly
   populated attempt-log row.
-- The DeepDTA adapter carries six declared compatibility patches and a converter
+- The DeepDTA adapter carries declared compatibility patches and a converter
   into DeepDTA's native matrix format, with a round-trip check that runs before
   the model starts.
-- **Known gap:** `run_experiments.py` logs metrics but writes no per-row
-  predictions, so a further patch is needed before DeepDTA can enter the per-row
-  comparison. The adapter's `collect` raises with that exact reason rather than
-  inventing numbers.
-- The GraphDTA, MolTrans and PerceiverCPI adapters are placeholders: the
-  repositories and entry points are right, but neither the data layout nor the
-  compatibility work has been done. Expect each to need its own DeepDTA-sized
-  effort.
+- A mechanical patch makes DeepDTA emit aligned per-row predictions. The
+  remaining blocker is runtime: the present TensorFlow build is CPU-only and a
+  diagnostic run reached only half of the first of 100 epochs in about 2.5 hours.
+- The GraphDTA GINConvNet has now run end to end on CUDA using the full
+  leak-free split and a split-aware loader: test RMSE 1.324, Pearson r 0.156;
+  checkpoint selection uses validation only. PerceiverCPI has now completed on
+  CUDA (test RMSE 1.328, Pearson r 0.108) with the published regression CLI;
+  only Windows infrastructure shims and a smaller batch were required. MolTrans remains ineligible: its released
+  code is binary classification only and has no regression head. The proposed
+  ChemBERTa-2 + ESM-2 row was invalidated because the local script used
+  handcrafted features rather than those models.
 - `deepdta_reimpl` is available now as an interim comparison point, and is named
   so that no table can present it as a re-run of the published code.
 
@@ -183,8 +190,8 @@ as a negative result: `shift_robust` is under-covered and does not improve
 worst-family RMSE enough to justify its loss in average accuracy.
 
 **Phase 4 — writing.** Draft and generated tables are complete. Remaining work is
-citation verification, author review, journal formatting, and an optional decision
-about the external re-run track.
+citation verification, author review, journal formatting, and a compute-resource
+decision about the external re-run track.
 
 The external re-run track remains the schedule risk. It is explicitly excluded
 from headline claims rather than allowed to block the benchmark paper.
@@ -199,9 +206,10 @@ contributions anyway.
 
 ## What would make this stronger
 
-**A prospective check.** Hold out everything after a cutoff, predict, then compare
-against measurements published since. Costs nothing but patience and converts a
-retrospective argument into a prospective one.
+**A prospective check.** Freeze model weights, candidates, endpoints and the
+analysis plan before labels exist, then compare against a future database release
+or independently commissioned assays. A post-hoc time split is useful but remains
+retrospective.
 
 **A pharmacology co-author.** Not required for the computational result, but needed
 to write the "so what" paragraph credibly, and to choose the case study in Section 4
