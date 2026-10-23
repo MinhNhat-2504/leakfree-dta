@@ -713,7 +713,8 @@ exclusions.
 
 In the archival deposit, because they are too large for git: the full per-row
 split assignment for all nine rungs, the audit reports in JSON and Markdown, and
-per-row predictions for every model.
+per-row predictions for every model. The deposit is archived at Zenodo under DOI
+[RESERVED DOI — insert before submission], corresponding to the tagged release.
 
 The benchmark is reproducible from a ChEMBL release number and the committed
 query. Applying a split manifest to a dataset whose digest does not match is

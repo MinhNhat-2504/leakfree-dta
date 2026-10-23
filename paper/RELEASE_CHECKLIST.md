@@ -25,42 +25,74 @@ deposit when the paper is submitted.
 Do not publish the Zenodo record and then keep changing the repository. The
 deposit should correspond to a tagged commit, and that tag should not move.
 
+## Two routes, and why this one
+
+Zenodo can archive a GitHub repository automatically, and that is the route most
+guides describe. It is the wrong route here.
+
+**The GitHub integration archives only what git tracks.** `data/` and `results/`
+are gitignored, so the automatic snapshot would contain the source code and none
+of the evidence: no split manifests, no audit reports, no per-row predictions.
+Those artifacts are what the paper's tables rest on, and a deposit without them
+does not discharge the journal's requirement.
+
+It also mints the DOI only when a release is created, whereas the manuscript
+needs the DOI before submission.
+
+So the deposit is created **manually**, and the GitHub release exists alongside
+it to fix the exact commit. `.zenodo.json` is only read by the GitHub
+integration; on this route it does nothing, and the template below is kept only
+in case the integration is used later for a future version.
+
 ## Steps
 
-1. **Connect the repository.** Sign in to Zenodo with GitHub, open
-   https://zenodo.org/account/settings/github/, and switch on
-   `MinhNhat-2504/leakfree-dta`. Zenodo only sees public repositories, so push
-   first.
+1. **Reserve the DOI first.** On Zenodo, *New upload* -> upload type `Software`
+   -> *Reserve DOI* in the Basic information panel. Do not publish. Then replace
+   every `[RESERVED DOI — insert before submission]` marker:
 
-2. **Add `.zenodo.json`** at the repository root so the deposit carries correct
-   metadata rather than whatever Zenodo infers. A template is below.
+   ```bash
+   grep -rn "RESERVED DOI" paper/
+   ```
 
-3. **Reserve the DOI.** In Zenodo, start a new upload for the repository and use
-   "Reserve DOI" in the Basic information panel. Copy it into
-   `paper/submission_frontmatter.md` and into Section 8 of `paper/draft.md`.
+   Currently two, in `submission_frontmatter.md` (Availability of data and
+   materials) and `draft.md` (Section 8). The grep is the check, not the list --
+   it stays correct if a third appears.
 
-4. **Freeze and tag.** Confirm the working tree is clean, the full test suite
-   passes, and `scripts/reproduce_all.py` runs from a clean checkout. Then:
+2. **Fill the metadata** from the template below. Zenodo renders
+   `creators[].name` verbatim, and Vietnamese names are easily entered
+   family-name-first in one system and given-name-first in another; make Zenodo
+   and the manuscript agree before publishing.
+
+3. **Freeze and tag.** Working tree clean, full test suite passing, ruff clean,
+   and `scripts/reproduce_all.py` completing from a clean checkout. Then:
 
    ```bash
    git tag -a v1.0.0 -m "Release accompanying the Journal of Cheminformatics submission"
    git push origin v1.0.0
    ```
 
-5. **Create the GitHub Release** from that tag. Zenodo picks it up automatically
-   and publishes the archive against the reserved DOI.
+4. **Create the GitHub Release** from that tag, and download its source archive.
+   That archive is one of the files attached to the deposit, so the deposit and
+   the tag describe the same commit.
 
-6. **Check what was archived.** Zenodo stores the repository as a source
-   snapshot, which excludes anything in `.gitignore` — and that excludes
-   `data/` and `results/`. Decide deliberately what else to attach:
+5. **Attach the evidence.** The source archive alone is not the deposit. Add, at
+   minimum:
 
-   - split manifests (small, and the core reusable artifact)
-   - audit reports in JSON and Markdown
-   - per-row predictions for every model
-   - curation log and dataset summary
+   - `data/splits/<dataset>/_index.json` -- fold counts, specifications and
+     per-fold digests, enough to verify a rebuilt split
+   - `results/splits/<dataset>_assignment.parquet` -- the full fold assignment,
+     so a reader applies the splits without rerunning the clustering
+   - per-row predictions for every model that was run
+   - audit reports and the curation log
+   - the tables and figures the paper reproduces
 
-   Attach these as additional files on the Zenodo record if they are not tracked
-   in git. They are the evidence behind the paper's tables.
+   `results/` is roughly 1 GB, most of it per-row detail inside the audit
+   reports. Zenodo allows 50 GB per record, so size is not the constraint;
+   deliberateness is. Archive what the paper's claims rest on, not everything the
+   pipeline happened to write.
+
+6. **Publish when the paper is submitted**, not before, and do not move the tag
+   afterwards. A published Zenodo record is permanent by design.
 
 ## Redistribution
 
@@ -94,11 +126,6 @@ themselves, which is what the repository is already built to support.
   ]
 }
 ```
-
-Check the name order against Zenodo's rendering before publishing: Zenodo
-displays `creators[].name` verbatim, and Vietnamese names are often entered
-family-name-first in one system and given-name-first in another. The two should
-agree with how the authors appear on the manuscript.
 
 ## Before tagging
 
