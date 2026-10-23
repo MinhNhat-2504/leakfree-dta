@@ -9,7 +9,10 @@ description = "Leakage-audited benchmark and shift-robust baseline for drug-targ
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Minh Nhat" }]
+authors = [
+  { name = "Nhat Trinh Ngoc Minh", email = "nhat.2474802010280@vanlanguni.vn" },
+  { name = "Linh Nguyen Thi My", email = "linh.ntm@vlu.edu.vn" },
+]
 keywords = [
   "drug-target affinity",
   "data leakage",
