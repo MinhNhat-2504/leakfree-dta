@@ -44,9 +44,8 @@ terms; the repository supplies release identifiers, extraction code, curation lo
 content digests, and split manifests.
 
 An archived release of the code, split manifests, audit reports and per-row model
-predictions is deposited at Zenodo under DOI [RESERVED DOI — insert before
-submission]. See `paper/RELEASE_CHECKLIST.md` for how the DOI is reserved and
-when the deposit is published.
+predictions is deposited at Zenodo under DOI
+[10.5281/zenodo.23605646](https://doi.org/10.5281/zenodo.23605646).
 
 ### Competing interests
 

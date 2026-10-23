@@ -253,6 +253,20 @@ disproportionately the oldest.
 
 ---
 
+## Citing this work
+
+The archived release — split manifests, audit reports and per-row predictions
+for every model, which are too large to track in git — is deposited at Zenodo:
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23605646.svg)](https://doi.org/10.5281/zenodo.23605646)
+
+```
+doi:10.5281/zenodo.23605646
+```
+
+That DOI points at one specific version. The deposit is published alongside the
+manuscript; until then it is reserved and does not yet resolve.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
