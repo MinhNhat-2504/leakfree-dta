@@ -585,7 +585,7 @@ leakage-free benchmark.
 
 The registered robustness hypothesis is **not supported**. On the
 leakage-free test set, `shift_robust` has RMSE **1.490**, compared with
-**1.449** for ERM-MLP and **1.464** for Group-DRO-MLP. Its worst-family RMSE
+**1.450** for ERM-MLP and **1.464** for Group-DRO-MLP. Its worst-family RMSE
 is **1.645**, versus **1.695** for ERM-MLP and **1.646** for Group-DRO-MLP.
 The conformal interval has mean width **2.182** log units but covers only
 **54.5%** of rows at the nominal 90% level; coverage is **64.2%** for kinases,

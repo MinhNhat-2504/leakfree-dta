@@ -20,6 +20,39 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
+def _patch_randint_for_python_312() -> bool:
+    """Let ``random.randint`` accept an integral float, as Python <3.12 did.
+
+    tf_keras 2.16 generates layer seeds with ``randint(1, 1e9)`` -- a float upper
+    bound -- at ``tf_keras/src/backend.py:2032``. Python 3.12 rejects that, so
+    building the first Embedding layer dies with "'float' object cannot be
+    interpreted as an integer". The next line of the same upstream function
+    already writes ``int(1e9)``, so this is an oversight in tf_keras rather than
+    a deliberate choice.
+
+    The shim is applied here, in the runner, and not to the DeepDTA source. It
+    touches seed generation only: nothing about the architecture, the optimiser,
+    the loss or the data passes through it. It is recorded as an environment
+    adaptation in the run metadata, and it is a no-op on any Python that already
+    accepts the call.
+    """
+    original = random.Random.randint
+
+    def randint(self, a, b):
+        if isinstance(a, float) and a.is_integer():
+            a = int(a)
+        if isinstance(b, float) and b.is_integer():
+            b = int(b)
+        return original(self, a, b)
+
+    try:
+        original(random.Random(), 1, 1e9)
+    except TypeError:
+        random.Random.randint = randint
+        return True
+    return False
+
+
 def sha256(path):
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
@@ -64,6 +97,11 @@ def main():
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--patience", type=int, default=15)
     args = parser.parse_args()
+    randint_patched = _patch_randint_for_python_312()
+    if randint_patched:
+        print("environment shim: random.randint accepts integral floats "
+              "(tf_keras 2.16 seeds layers with randint(1, 1e9) on Python 3.12)",
+              flush=True)
     if min(args.epochs, args.batch_size, args.patience) < 1:
         parser.error("epochs, batch size and patience must be positive")
     args.repo, args.data, args.output = (p.resolve() for p in (args.repo, args.data, args.output))
@@ -220,6 +258,7 @@ def main():
         "test_sha256": sha256(args.data / "test.csv"), "predictions_sha256": sha256(prediction_path),
         "session_elapsed_seconds": time.time() - started,
         "training_elapsed_seconds": sum(item["seconds"] for item in state["history"]),
+        "randint_shim_applied": randint_patched,
         "adaptations": ["Explicit train/valid/test wrapper; validation-only epoch selection",
                         "Unique int32 tokens gathered per batch; batch size 64 by default",
                         "Atomic epoch checkpoints preserve model, Adam, selection and history",
