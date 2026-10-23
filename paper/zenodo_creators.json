@@ -1,0 +1,38 @@
+[
+  {
+    "person_or_org": {
+      "type": "personal",
+      "given_name": "Ngoc Minh Nhat",
+      "family_name": "Trinh",
+      "identifiers": [
+        {
+          "scheme": "orcid",
+          "identifier": "0009-0006-9477-9642"
+        }
+      ]
+    },
+    "affiliations": [
+      {
+        "name": "Faculty of Information Technology, Van Lang School of Technology, Van Lang University, Ho Chi Minh City, Vietnam"
+      }
+    ]
+  },
+  {
+    "person_or_org": {
+      "type": "personal",
+      "given_name": "Thi My Linh",
+      "family_name": "Nguyen",
+      "identifiers": [
+        {
+          "scheme": "orcid",
+          "identifier": "0000-0003-3990-312X"
+        }
+      ]
+    },
+    "affiliations": [
+      {
+        "name": "Faculty of Information Technology, Van Lang School of Technology, Van Lang University, Ho Chi Minh City, Vietnam"
+      }
+    ]
+  }
+]
