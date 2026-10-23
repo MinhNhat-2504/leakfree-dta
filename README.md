@@ -61,6 +61,14 @@ then the modelling contribution is the gap, not the headline.
 can apply the paper's splits to their own copy of the data and be told immediately
 if that copy differs from the one the paper reports on.
 
+The per-row manifests are 42 MB per rung, so the repository carries
+`data/splits/<dataset>/_index.json` instead: 11 KB with each rung's
+specification, fold counts and digests. Splits are a deterministic function of
+the curated data and that specification, so the index is enough to rebuild them
+and confirm you got the same answer. `scripts/export_split_artifacts.py` also
+writes a single 17 MB table holding every rung's assignment, for the archival
+deposit.
+
 **A shift-robust baseline** (`leakfree_dta.models.robust`): group DRO over protein
 clusters with a Mondrian conformal head. It is *not* claimed to be the most
 accurate model — the worst-group objective trades average accuracy for uniformity,

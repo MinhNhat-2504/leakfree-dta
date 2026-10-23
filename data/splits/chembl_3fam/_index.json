@@ -1,0 +1,351 @@
+{
+  "dataset": "chembl_3fam",
+  "dataset_digest": "717f8c10150068cdb3df09b3d658a5d9f6540efdf6946ca5f3f018c2306cbfaf",
+  "splits": {
+    "both_cold": {
+      "counts": {
+        "excluded": 440108,
+        "test": 45115,
+        "train": 224655,
+        "valid": 18357
+      },
+      "fold_digests": {
+        "excluded": "2173430a2f51b5a1274d18c28cf8125c949387841b4c2d33fbcbbf2ced718709",
+        "test": "cfadcdd9de6dbca3295a49ce2e17aa7af79f1fdf4050b6c869ab6ca859826e3b",
+        "train": "1a454122cea74e3602a1116bd69190e2bcdc248ae5e32bb59f99165e0e9918db",
+        "valid": "c31d360049293c6f7b039489717aca20e707eaee0d765767574d2e43afd4e03f"
+      },
+      "notes": {
+        "axes_constrained": [
+          "ligand_side",
+          "protein_side"
+        ],
+        "excluded_fraction": 0.6043,
+        "n_excluded": 440108,
+        "n_rows": 728235,
+        "why_excluded": "Rows whose ligand and protein groups fall on different sides of the boundary cannot be placed without leaking. This is the cost of a block-structured, leakage-free split."
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "cluster",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "both_cold",
+        "options": {},
+        "protein_axis": "cluster",
+        "protein_identity": 0.3,
+        "seed": 0,
+        "temporal_axis": "none",
+        "temporal_cutoff_year": null,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "52fa817f9d45458e"
+    },
+    "leakfree": {
+      "counts": {
+        "excluded": 527095,
+        "test": 4903,
+        "train": 195322,
+        "valid": 915
+      },
+      "fold_digests": {
+        "excluded": "c9bb93cc4d7dc8d94edc168a3c97e006090ae9e4d429b29a4e461c5cc78b052b",
+        "test": "660d053611017789de62610ec4ccbae713ba232996d8ba1eec0033ccfd408f0f",
+        "train": "9a1d021ea7d959d3ad632aa7575855fa4551e246e24c3b091787dcd87e41b115",
+        "valid": "6f608ad8296dcced498560f1bcf208ba1773c026342845c50236282e9a59291c"
+      },
+      "notes": {
+        "axes_constrained": [
+          "ligand_side",
+          "protein_side",
+          "temporal_side"
+        ],
+        "excluded_fraction": 0.7238,
+        "n_excluded": 527095,
+        "n_rows": 728235,
+        "why_excluded": "Rows whose ligand and protein groups fall on different sides of the boundary cannot be placed without leaking. This is the cost of a block-structured, leakage-free split."
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "cluster",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "leakfree",
+        "options": {
+          "temporal_valid_years": 2
+        },
+        "protein_axis": "cluster",
+        "protein_identity": 0.3,
+        "seed": 0,
+        "temporal_axis": "year",
+        "temporal_cutoff_year": 2020,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "2ea7e8ee39ff8572"
+    },
+    "ligand_cluster": {
+      "counts": {
+        "excluded": 0,
+        "test": 145666,
+        "train": 509742,
+        "valid": 72827
+      },
+      "fold_digests": {
+        "excluded": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "test": "e647ed482de893b53f2a1cf0535463ebd32eeaa853d0ceb1c9800659638ad607",
+        "train": "489650e51b607430e45f419fe3456f369ece5f93ee904988803ec9f4c4a296d4",
+        "valid": "118ba45940c4d42d111c5fc47b919c0ed8370ad1b4a437e76e28ca5bfa0a9192"
+      },
+      "notes": {
+        "axes_constrained": [
+          "ligand_side"
+        ],
+        "excluded_fraction": 0.0,
+        "n_excluded": 0,
+        "n_rows": 728235,
+        "why_excluded": "Rows whose ligand and protein groups fall on different sides of the boundary cannot be placed without leaking. This is the cost of a block-structured, leakage-free split."
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "cluster",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "ligand_cluster",
+        "options": {},
+        "protein_axis": "random",
+        "protein_identity": 0.3,
+        "seed": 0,
+        "temporal_axis": "none",
+        "temporal_cutoff_year": null,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "0ba3e0953f9d07f5"
+    },
+    "ligand_scaffold": {
+      "counts": {
+        "excluded": 0,
+        "test": 145659,
+        "train": 509752,
+        "valid": 72824
+      },
+      "fold_digests": {
+        "excluded": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "test": "6487e68b0ec34c2e8fec181ad0460640e675f3a63f66d9741489e65f2532efef",
+        "train": "996280c188aa2088ca9beb6c935e1749b119530ef727ea137440a6a0e0a600ea",
+        "valid": "fe7a84fb21ad959669f3fb36c0ff30c16394a56137dced1c00a21ea0c2ee1c76"
+      },
+      "notes": {
+        "axes_constrained": [
+          "ligand_side"
+        ],
+        "excluded_fraction": 0.0,
+        "n_excluded": 0,
+        "n_rows": 728235,
+        "why_excluded": "Rows whose ligand and protein groups fall on different sides of the boundary cannot be placed without leaking. This is the cost of a block-structured, leakage-free split."
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "scaffold",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "ligand_scaffold",
+        "options": {},
+        "protein_axis": "random",
+        "protein_identity": 0.3,
+        "seed": 0,
+        "temporal_axis": "none",
+        "temporal_cutoff_year": null,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "b6f03490e3cbf895"
+    },
+    "protein_cluster30": {
+      "counts": {
+        "excluded": 0,
+        "test": 193952,
+        "train": 453046,
+        "valid": 81237
+      },
+      "fold_digests": {
+        "excluded": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "test": "bfcbbdd299fa524ec09ad5697d034530525db5508b753c92497623a4f5112a2a",
+        "train": "a1ef5544a890f6827689c701b1df4c55402da87f23148a895de5decfd47a3aec",
+        "valid": "c0ab26ce44237b516e924e9000e3ca67b08563f78339f80ffbff9dca732a57de"
+      },
+      "notes": {
+        "axes_constrained": [
+          "protein_side"
+        ],
+        "excluded_fraction": 0.0,
+        "n_excluded": 0,
+        "n_rows": 728235,
+        "why_excluded": "Rows whose ligand and protein groups fall on different sides of the boundary cannot be placed without leaking. This is the cost of a block-structured, leakage-free split."
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "random",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "protein_cluster30",
+        "options": {},
+        "protein_axis": "cluster",
+        "protein_identity": 0.3,
+        "seed": 0,
+        "temporal_axis": "none",
+        "temporal_cutoff_year": null,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "0110b9dd89d24d91"
+    },
+    "protein_cluster50": {
+      "counts": {
+        "excluded": 0,
+        "test": 147064,
+        "train": 506711,
+        "valid": 74460
+      },
+      "fold_digests": {
+        "excluded": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "test": "0605db3cb80633ca1d6e2b5ca515f1d96b697f1698604d2d24d91c3870f341cf",
+        "train": "a788af6dbab8c08173bcebb51347ed407965855871220f82f0982a9979b4034f",
+        "valid": "ecaf3a3596cf6473ce8d509fb45bcd33836aa00345a988a45cb6aebb660b09d2"
+      },
+      "notes": {
+        "axes_constrained": [
+          "protein_side"
+        ],
+        "excluded_fraction": 0.0,
+        "n_excluded": 0,
+        "n_rows": 728235,
+        "why_excluded": "Rows whose ligand and protein groups fall on different sides of the boundary cannot be placed without leaking. This is the cost of a block-structured, leakage-free split."
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "random",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "protein_cluster50",
+        "options": {},
+        "protein_axis": "cluster",
+        "protein_identity": 0.5,
+        "seed": 0,
+        "temporal_axis": "none",
+        "temporal_cutoff_year": null,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "29967c5211c3f52c"
+    },
+    "protein_identity": {
+      "counts": {
+        "excluded": 0,
+        "test": 145653,
+        "train": 508929,
+        "valid": 73653
+      },
+      "fold_digests": {
+        "excluded": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "test": "1d655686538dcb482eaa95853e9896b9279b4adb74c490fefb75698fb58c428f",
+        "train": "b6666da4cd0ae1b6632ec42533960d822653152380ba544bb605882351529ff6",
+        "valid": "cbd08a3f364b871bd1da3f138cb462b4e452225bbd5fccc80423b6eb13072601"
+      },
+      "notes": {
+        "axes_constrained": [
+          "protein_side"
+        ],
+        "excluded_fraction": 0.0,
+        "n_excluded": 0,
+        "n_rows": 728235,
+        "why_excluded": "Rows whose ligand and protein groups fall on different sides of the boundary cannot be placed without leaking. This is the cost of a block-structured, leakage-free split."
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "random",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "protein_identity",
+        "options": {},
+        "protein_axis": "identity",
+        "protein_identity": 0.3,
+        "seed": 0,
+        "temporal_axis": "none",
+        "temporal_cutoff_year": null,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "74e3a1e772282926"
+    },
+    "random": {
+      "counts": {
+        "excluded": 0,
+        "test": 145856,
+        "train": 509988,
+        "valid": 72391
+      },
+      "fold_digests": {
+        "excluded": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "test": "1bd995b88f9b29e9ad9c9849b4eff1e03bc28d63f0ad6bf028519302253f6ac9",
+        "train": "c4db4cc39573f87ca61595b866387450943b1ea167071482a46af2268b217232",
+        "valid": "5bc2aa01f5c21a24a8f4b90df9026a6d766fab80413548f2e6d3a3dc6696c291"
+      },
+      "notes": {
+        "axes_constrained": [],
+        "excluded_fraction": 0.0,
+        "n_excluded": 0,
+        "n_rows": 728235
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "random",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "random",
+        "options": {},
+        "protein_axis": "random",
+        "protein_identity": 0.3,
+        "seed": 0,
+        "temporal_axis": "none",
+        "temporal_cutoff_year": null,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "21dd5d03c37028e0"
+    },
+    "temporal": {
+      "counts": {
+        "excluded": 44614,
+        "test": 107527,
+        "train": 499922,
+        "valid": 76172
+      },
+      "fold_digests": {
+        "excluded": "b5e5aac7c865a21ff5fd8fb42dcf6765127c923ade9070c2cff2992b30427063",
+        "test": "1bb1b0c7091d260e0c55a23fcb23baed054429e2cb726047d91c4a1d5acd460e",
+        "train": "e1ade7964d65bc376e04443e748d748f8c4803541ba2e665ddf1291cd376089c",
+        "valid": "e169863022908bd32851c71f79dbfc92918ad7c93df4a8ae9b84ba5c39301f2e"
+      },
+      "notes": {
+        "axes_constrained": [
+          "temporal_side"
+        ],
+        "excluded_fraction": 0.0613,
+        "n_excluded": 44614,
+        "n_rows": 728235
+      },
+      "spec": {
+        "holdout_families": [],
+        "ligand_axis": "random",
+        "ligand_cluster_cutoff": 0.4,
+        "name": "temporal",
+        "options": {
+          "temporal_valid_years": 2
+        },
+        "protein_axis": "random",
+        "protein_identity": 0.3,
+        "seed": 0,
+        "temporal_axis": "year",
+        "temporal_cutoff_year": 2020,
+        "test_fraction": 0.2,
+        "valid_fraction": 0.1
+      },
+      "spec_digest": "a0e2c3871fd6ae08"
+    }
+  }
+}

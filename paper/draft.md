@@ -354,10 +354,19 @@ Folds are assigned by hashing the group label rather than by shuffling, so a
 group's fold depends only on its own identity. The benchmark can therefore grow
 without invalidating published numbers.
 
-Splits are released as manifests keyed on `row_key`, with a content digest of
-each fold and of the dataset. A reader applies the split to their own copy and is
-told immediately if that copy differs from ours — a near-universal failure mode
-when "the same" ChEMBL extract is rebuilt a year later.
+Splits are released in two forms, because the useful one is too large for a
+code repository. A per-row manifest keyed on `row_key` holds every fold
+assignment and runs to 42 MB per rung; all nine are archived together as a
+single 17 MB table in the deposit. Alongside it, the repository carries an
+11 KB index giving each rung's specification, fold counts, per-fold content
+digest and the dataset digest. That index is what lets a reader *verify* a split
+— rebuild it from the committed specification, which is deterministic by
+construction, and compare digests. A reader who does not want to repeat the
+clustering takes the archived assignment instead.
+
+Either way the digest is checked before use, so a copy of ChEMBL that differs
+from ours is reported rather than silently scored — a near-universal failure
+mode when "the same" extract is rebuilt a year later.
 
 All nine rungs, over the 728,235-pair benchmark:
 
@@ -697,10 +706,14 @@ and either a future database release or an independent laboratory.
 
 Code: `https://github.com/MinhNhat-2504/leakfree-dta`, MIT.
 
-Released artifacts: the extraction query, the curation log with per-step row
-counts, the split manifests with content digests, the audit reports in JSON and
-Markdown, per-row predictions for every model, and the re-run attempt log
-including failures.
+In the repository: the extraction query, the curation log with per-step row
+counts, the split index with specifications and content digests, the frozen
+Boltz-2 subset definition, and the re-run attempt log including failures and
+exclusions.
+
+In the archival deposit, because they are too large for git: the full per-row
+split assignment for all nine rungs, the audit reports in JSON and Markdown, and
+per-row predictions for every model.
 
 The benchmark is reproducible from a ChEMBL release number and the committed
 query. Applying a split manifest to a dataset whose digest does not match is

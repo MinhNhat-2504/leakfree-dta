@@ -19,19 +19,37 @@ make authorship and disclosure decisions. Each item below needs a named author a
 
 ## Authorship and disclosures
 
-- Final author list and order.
-- Corresponding author, email, affiliation, and ORCID.
-- Individual author contributions.
-- Funding sources and funder roles.
-- Financial and non-financial competing interests.
-- Acknowledgements and permission for named acknowledgements.
-- Ethics/consent statements (expected to be not applicable for public biochemical data,
-  but an author must confirm this).
-- Disclosure of AI-assisted writing or coding according to the publisher's policy.
+Settled 24 October 2026 and written into `submission_frontmatter.md`:
+
+- [x] Author list and order: Nhat Trinh Ngoc Minh; Linh Nguyen Thi My.
+- [x] Corresponding author: Linh Nguyen Thi My, linh.ntm@vlu.edu.vn.
+- [x] ORCIDs: 0009-0006-9477-9642; 0000-0003-3990-312X.
+- [x] Affiliation: one shared affiliation, Faculty of Information Technology,
+      Van Lang School of Technology, Van Lang University, Ho Chi Minh City.
+- [x] Funding: none.
+- [x] Competing interests: none.
+
+Still open:
+
+- [ ] Individual author contributions. A proposal is in
+      `submission_frontmatter.md`, inferred from commit history. Both authors
+      must confirm or amend it; it is a claim about who did what and only the
+      authors can make it.
+- [ ] Acknowledgements, or a decision to omit the section. Anyone named must
+      consent first.
+- [ ] Ethics and consent: expected to be not applicable for public biochemical
+      data, and drafted that way, but an author must confirm.
+- [ ] AI-assistance disclosure. Draft wording is in `submission_frontmatter.md`
+      and states that LLM assistance was used for code, analysis and drafting
+      with the authors verifying everything. Check it against the journal's
+      current policy, which changes often.
 
 ## Data and release decisions
 
-- Select the public archival repository and DOI for code/results.
+See `RELEASE_CHECKLIST.md` for the DOI procedure; the short version is Zenodo,
+with the DOI reserved before submission and the deposit published at submission.
+
+- [ ] Create the Zenodo deposit and reserve the DOI.
 - Confirm which ChEMBL-derived artifacts may legally be redistributed.
 - Confirm whether the BindingDB input can be redistributed or must be downloaded by readers.
 - Freeze a release commit and rerun the full reproduction command from a clean environment.
