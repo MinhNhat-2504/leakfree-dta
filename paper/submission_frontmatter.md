@@ -59,27 +59,21 @@ commercial, or not-for-profit sectors.
 
 ### Authors' contributions
 
-[AUTHOR INPUT REQUIRED — the split below is a proposal based on the repository's
-commit history, not a statement of fact. Both authors must confirm or amend it
-before submission.]
-
-Proposed: NTNM — conceptualization, methodology, software, data curation, formal
-analysis, validation, visualization, writing (original draft). NTML —
-conceptualization, methodology, supervision, project administration, writing
-(review and editing). Both authors read and approved the final manuscript.
+NTNM carried out the study: conceptualization, methodology, software, data
+curation, formal analysis, validation, visualization, and writing of the
+original draft. NTML provided supervision and project administration, and
+reviewed and approved the manuscript. Both authors read and approved the final
+manuscript.
 
 ### Acknowledgements
 
-[AUTHOR INPUT REQUIRED — omit this section entirely if there is no one to thank.
-Named individuals must consent before being acknowledged.]
+Not applicable.
 
 ### Authors' information
 
 Optional; omit unless the authors wish to include biographical notes.
 
 ### Use of AI-assisted technologies
-
-[AUTHOR INPUT REQUIRED — a statement is needed, and it must be accurate.]
 
 Large language model assistance (Claude, Anthropic) was used during software
 development, analysis scripting, and manuscript drafting in this repository. The

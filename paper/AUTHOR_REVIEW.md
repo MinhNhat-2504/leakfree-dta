@@ -29,20 +29,21 @@ Settled 24 October 2026 and written into `submission_frontmatter.md`:
 - [x] Funding: none.
 - [x] Competing interests: none.
 
+Settled 24 October 2026:
+
+- [x] Author contributions: NTNM carried out the study; NTML supervised,
+      administered the project, and reviewed and approved the manuscript.
+- [x] Acknowledgements: none, recorded as "Not applicable".
+- [x] Ethics and consent: "Not applicable". The section itself is mandatory in
+      a BMC Declarations block even when it does not apply, so it stays with
+      that content rather than being removed.
+- [x] AI-assistance disclosure: wording is in `submission_frontmatter.md`.
+
 Still open:
 
-- [ ] Individual author contributions. A proposal is in
-      `submission_frontmatter.md`, inferred from commit history. Both authors
-      must confirm or amend it; it is a claim about who did what and only the
-      authors can make it.
-- [ ] Acknowledgements, or a decision to omit the section. Anyone named must
-      consent first.
-- [ ] Ethics and consent: expected to be not applicable for public biochemical
-      data, and drafted that way, but an author must confirm.
-- [ ] AI-assistance disclosure. Draft wording is in `submission_frontmatter.md`
-      and states that LLM assistance was used for code, analysis and drafting
-      with the authors verifying everything. Check it against the journal's
-      current policy, which changes often.
+- [ ] Confirm the AI-assistance wording against the journal's policy as it
+      stands on the submission date. Publisher requirements here change often
+      enough that a statement written weeks earlier can be out of date.
 
 ## Data and release decisions
 
