@@ -1,19 +1,19 @@
 # Validation and submission status
 
-Updated: 2026-10-23 (Asia/Ho_Chi_Minh)
+Updated: 2026-10-24 (Asia/Ho_Chi_Minh)
 
 ## External published-model re-runs — completed where technically eligible
 
 The harness, durable outcomes, consolidated attempt log, DeepDTA matrix encoding,
-and PerceiverCPI input layout are implemented and tested. GraphDTA and
-PerceiverCPI have now produced full comparable prediction vectors on the
-leakage-free split. DeepDTA is being rerun through the upstream source under
-WSL2/CUDA; the previous attempt stopped only at its legacy Matplotlib plotting
-call.
+and PerceiverCPI input layout are implemented and tested. DeepDTA, GraphDTA and
+PerceiverCPI have all produced full comparable prediction vectors on the
+leakage-free split from their upstream sources. Three of six registered
+candidates therefore completed; the other three are attempt-log rows with stated
+reasons.
 
 | candidate | status | evidence / next requirement |
 | --- | --- | --- |
-| DeepDTA | WSL2 CUDA rerun active | Ubuntu WSL2 sees the RTX 4060 with TensorFlow 2.16.1; the upstream source is run through a legacy-Keras compatibility wrapper. The first GPU attempt at batch 256 hit the WSL 8 GiB RAM limit and a later attempt stopped at the upstream Matplotlib `papertype` call. The active retry uses batch 64 and float32 input arrays (memory-only adaptation, architecture/loss/optimizer unchanged), with the deprecated plotting arguments removed. Do not report a final metric until the run completes. |
+| DeepDTA | completed on CUDA | Upstream source at `a546a8433a68` run under WSL2 on the RTX 4060 through the split-aware wrapper. Best validation epoch 3, 18 epochs, 12.6 minutes. Test RMSE 1.3278, Pearson r 0.1701, Spearman 0.1529, 4,903 predictions. Two declared departures: selection on the designated validation fold rather than upstream's test-as-validation protocol, and a `random.randint(1, 1e9)` coercion for tf_keras 2.16 on Python 3.12, which touches seed generation only. Row keys and labels verified against the split manifest; predictions SHA-256 recorded. Artifacts under `data/external/chembl_3fam/leakfree/DeepDTA/output-cuda-v2/` and `results/runs/chembl_3fam/leakfree/DeepDTA/`. |
 | GraphDTA | completed on CUDA | Upstream GINConvNet head `6162245c6776684b391d30610850fe7077478435`; RTX 4060 Laptop GPU; best validation epoch 9, early-stopped after 34 epochs. Test RMSE 1.3237, Pearson r 0.1565, 4,903 predictions. Checkpoint and run metadata are under `data/external/chembl_3fam/leakfree/GraphDTA/output/`; aligned predictions are in `results/runs/chembl_3fam/leakfree/GraphDTA/`. |
 | MolTrans | excluded | Released code is binary CPI classification with sigmoid/BCELoss and has no regression head; conversion would be a reimplementation. |
 | PerceiverCPI | completed on CUDA | RTX 4060 Laptop GPU; published CLI run with batch 16, explicit validation/test paths, and only infrastructure shims for Windows pipes/RAM. Test RMSE 1.3281, Pearson r 0.1079, Spearman rho 0.0815, 4,903 predictions; elapsed 417.21 minutes. Checkpoint, metadata, and aligned predictions are under `data/external/chembl_3fam/leakfree/PerceiverCPI/output/` and `results/runs/chembl_3fam/leakfree/PerceiverCPI/`. |

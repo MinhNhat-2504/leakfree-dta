@@ -425,15 +425,25 @@ remain in the durable attempt log. Both completed external models produced 4,903
 aligned test predictions; their descriptive point estimates are separate from
 the ten-model, cluster-bootstrap comparison in Table 2.
 
-The upstream DeepDTA rerun remains incomplete as of 24 October 2026. The CUDA
-attempt uses batch 64 and float32 input arrays, with compatibility patches and
-restart checkpoints recorded separately from the core reimplementation. A code
-audit also identified a protocol incompatibility: upstream `general_nfold_cv`
-passes the final test fold as `validation_data`, and early stopping monitors
-`val_loss`. Completing that unmodified evaluation would therefore use test labels
-to determine training duration. A comparable benchmark result requires selection
-on the designated validation fold and a single evaluation on the untouched test
-fold; no partial upstream DeepDTA output is reported as such a result here.
+The upstream DeepDTA source also completed on CUDA, through the same
+split-aware wrapper, reaching test RMSE **1.328** and Pearson r
+**0.170** over 4,903 predictions (best validation epoch
+3, 18 epochs run,
+12.6 minutes on an RTX 4060 Laptop GPU;
+upstream commit `a546a8433a68`). Row keys and labels were checked against
+the split manifest before the run was accepted, and the prediction file carries
+a SHA-256 recorded in the run metadata.
+
+Two departures are declared. First, a code audit found a protocol
+incompatibility in the upstream benchmark script: `general_nfold_cv` passes the
+final test fold as `validation_data` and early stopping monitors `val_loss`, so
+running it unmodified would let test labels determine training duration. The
+wrapper therefore selects on the designated validation fold and evaluates the
+untouched test fold once. Second, tf_keras 2.16 seeds layers with
+`random.randint(1, 1e9)` -- a float bound that Python 3.12 rejects, where the
+next line of the same upstream function already writes `int(1e9)` -- so the
+runner coerces integral floats for that call. It affects seed generation alone;
+no architecture, optimiser, loss or data passes through it.
 
 Boltz-2 has not been run. It would require a separately frozen stratified subset
 and an explicit compute budget. No Boltz-2 score or coverage estimate is included.
@@ -576,7 +586,14 @@ It uses the registered cluster bootstrap over **114 target groups** with
 **[1.160, 1.325]**), followed by the
 additive baseline (**1.241**). The DeepDTA reimplementation has higher point-estimate RMSE on this split
 (RMSE **1.293**, Pearson **0.177**), while the MLP variants and `shift_robust`
-are worse than the additive predictor on RMSE. The paired comparison against
+are worse than the additive predictor on RMSE.
+
+The three published architectures run from their upstream sources land together
+and behind the constant: DeepDTA **1.328**, GraphDTA **1.324**,
+PerceiverCPI **1.328**, against **1.241** for predicting the training mean.
+Their Pearson correlations are 0.170, 0.156 and 0.108, so they do
+carry a little ranking signal; none of them converts it into lower absolute
+error than a constant. The paired comparison against
 `additive_bias` is reported in the companion comparisons table; the important
 negative result is that no deep model improves absolute error on the
 leakage-free benchmark.
@@ -657,10 +674,13 @@ predict bounds are out of scope here.
 with effort we did not spend. We consider the alternative worse: re-tuning
 someone else's model measures our tuning budget.
 
-**Incomplete external-model coverage.** GraphDTA and PerceiverCPI have completed
-the strict-split evaluation, but upstream DeepDTA has not produced an eligible
-untouched-test result and Boltz-2 has not been run. This limits conclusions about
-published architectures and precludes a publication-year progress curve.
+**Partial external-model coverage.** Three published architectures completed
+the strict-split evaluation from their upstream sources -- DeepDTA, GraphDTA and
+PerceiverCPI -- of six registered candidates. MolTrans was ruled ineligible
+because its released code is a binary classifier with no regression head, the
+ChemBERTa-2 + ESM-2 entry was invalidated on review, and Boltz-2 has not been
+run. Three points spanning 2018-2022 are too few, and too clustered in time, to
+support a publication-year progress curve, which is why none is reported.
 
 **Cross-source independence.** BindingDB and ChEMBL largely point to the same
 publications for their shared pairs; the cross-source analysis measures database
