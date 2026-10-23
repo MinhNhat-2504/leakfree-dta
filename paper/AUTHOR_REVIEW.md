@@ -50,7 +50,8 @@ Still open:
 See `RELEASE_CHECKLIST.md` for the DOI procedure; the short version is Zenodo,
 with the DOI reserved before submission and the deposit published at submission.
 
-- [ ] Create the Zenodo deposit and reserve the DOI.
+- [x] Zenodo deposit created and DOI reserved: 10.5281/zenodo.23605646.
+      Draft only -- it is published at submission, not before.
 - Confirm which ChEMBL-derived artifacts may legally be redistributed.
 - Confirm whether the BindingDB input can be redistributed or must be downloaded by readers.
 - Freeze a release commit and rerun the full reproduction command from a clean environment.

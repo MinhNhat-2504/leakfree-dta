@@ -135,9 +135,15 @@ themselves, which is what the repository is already built to support.
 
 ## Before tagging
 
-- [ ] Working tree clean, all tests pass, ruff clean
+- [x] Working tree clean, all tests pass (146 passed, 1 skipped), ruff clean
 - [ ] `scripts/reproduce_all.py` completes from a clean checkout
-- [ ] Every number in `paper/draft.md` re-verified against artifacts
-- [ ] `[AUTHOR INPUT REQUIRED]` markers resolved in `submission_frontmatter.md`
-- [ ] Reserved DOI written into the manuscript and this repository's README
-- [ ] Redistribution of derived data confirmed against ChEMBL and BindingDB terms
+- [x] Every number in `paper/draft.md` re-verified against artifacts
+- [x] `[AUTHOR INPUT REQUIRED]` markers resolved in `submission_frontmatter.md`
+- [x] Reserved DOI written into the manuscript and this repository's README
+- [x] Redistribution of derived data confirmed: ChEMBL is CC BY-SA 3.0 and the
+      derived files are attributed as such; BindingDB appears only as aggregate
+      concordance statistics, with no records redistributed
+
+Tagged as v1.0.0 at commit 62ef9bd with `reproduce_all.py` unverified from a
+clean checkout. That is the one item above that was taken on trust rather than
+checked, and it is recorded here rather than ticked.
