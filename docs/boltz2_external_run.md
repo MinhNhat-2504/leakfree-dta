@@ -49,56 +49,58 @@ a reason rather than quietly removing it.
 
 ## Compute
 
-Roughly **35 GPU-hours** on one modern accelerator, against 20 if every complex
-cost the 2-minute base figure. The difference is the long kinase targets, and
-the estimate scales length to the power 1.5, which is a rough stand-in for
-attention over residues. Treat it as an order of magnitude.
+**83 GPU-hours**, measured rather than estimated. A smoke run of three
+complexes averaging 505 residues on a Kaggle T4 took 20.1 minutes: 13.9 for the
+structure pass and 6.2 for the affinity pass.
 
-Boltz-2 wants considerably more VRAM than the 8 GB laptop GPU this project
-develops on.
+The first figure in this document was 35 hours. It counted the structure pass
+only. Boltz runs affinity as a second pass over the same inputs, and affinity is
+what is being evaluated here, so the original number was low by a factor of
+2.4 and every chunk sized from it would have overrun its session.
 
-### Thirty-five hours is not a sitting
+### Thirty-five hours was wrong, and eighty-three is not a sitting either
 
-No free platform will give you one. Kaggle allows twelve hours per session and
-around thirty a week; Colab is shorter and less predictable; a rented instance
-is billed by the hour and worth releasing between sittings. The run therefore
-has to survive being stopped, and that is a property of how the work is divided
-rather than something to improvise when a session dies.
+No free platform gives you one. Kaggle allows twelve hours per session and
+around thirty a week; Colab is shorter and less predictable. The run has to
+survive being stopped, which is a property of how the work is divided rather
+than something to improvise when a session dies.
 
 ```bash
 python scripts/chunk_boltz2_subset.py --session-hours 12
 ```
 
-Chunks are packed by *estimated minutes*, not by complex count. Sequence lengths
-here run from under 300 residues to 1,306, so equal-sized chunks would differ
-several-fold in runtime and the long ones would overrun a session sized for the
-average. Each chunk is packed to 75% of the session, leaving room for setup, the
-model download and the final write.
+Chunks are packed by estimated minutes, not by complex count. Lengths run from
+219 to 1,306 residues and cost grows faster than length, so equal-sized chunks
+would differ several-fold in runtime. Each chunk is held to 75% of the session.
 
-On a 12-hour session that gives four chunks:
+### The 16 GB problem
 
-| chunk | complexes | est. hours | longest sequence |
-| --- | --: | --: | --: |
-| chunk01 | 189 | 9.0 | 714 |
-| chunk02 | 56 | 9.0 | 1,306 |
-| chunk03 | 78 | 9.0 | 1,052 |
-| chunk04 | 277 | 8.2 | 465 |
-
-Note chunk02: 56 complexes taking as long as chunk04's 277, because it carries
-the longest proteins. Packing by count would have put those in a session that
-could not finish them.
-
-Run one chunk per session, all writing to the same output directory. Progress is
-read from the output files rather than from a state file:
+A T4 raised a CUDA OOM warning at 494 residues, recovering only because the
+allocator freed its cache. It will not recover on the long targets, and
+`--diffusion_samples` is already at its minimum of 1, so there is no memory
+left to give back.
 
 ```bash
-python scripts/chunk_boltz2_subset.py --status
+python scripts/chunk_boltz2_subset.py --session-hours 12 --max-sequence-length 900
 ```
 
-A session killed mid-chunk therefore resumes in the right place, and the status
-cannot disagree with what is on disk. Chunks can also run on different machines
-in parallel; they only need to end up in one output directory, and every
-prediction carries its row key.
+This yields six chunks totalling 47.7 hours over 499 of the 600 complexes, and
+it reports what the filter costs per family, because the cost is not uniform:
+
+| family | in subset | over 900 aa | lost to the filter |
+| --- | --: | --: | --: |
+| GPCR | 300 | 0 | 0% |
+| kinase | 200 | 87 | **43.5%** |
+| protease | 100 | 14 | 14% |
+
+**A GPCR result from this is complete; a kinase result is not.** The 113 kinase
+complexes that fit are the short ones, and reporting their RMSE as a kinase
+figure would be the same unexamined selection this paper is about. GPCR is 85%
+of the leakage-free test fold, so the complete part is still the larger part.
+
+The excluded 101 complexes are left for a larger GPU, not removed. The frozen
+subset and its digest are unchanged, and `--status` continues to count against
+all 600, so the coverage never silently redefines its denominator.
 
 ## Running it
 

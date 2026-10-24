@@ -454,8 +454,21 @@ next line of the same upstream function already writes `int(1e9)` -- so the
 runner coerces integral floats for that call. It affects seed generation alone;
 no architecture, optimiser, loss or data passes through it.
 
-Boltz-2 has not been run. It would require a separately frozen stratified subset
-and an explicit compute budget. No Boltz-2 score or coverage estimate is included.
+Boltz-2 has not been scored. The two things it needed are now in place: a
+stratified 600-complex subset, frozen with a recorded digest, and a compute
+budget measured rather than guessed -- 83 GPU-hours, from a calibration run of
+three complexes on a T4. The run is under way on donated session-limited
+hardware and no score is reported here.
+
+One constraint will shape whatever is eventually reported. A 16 GB card raises
+a CUDA out-of-memory warning at 494 residues, and 101 of the 600 complexes
+exceed 900. Those are not distributed evenly: they are 43.5% of the kinase
+complexes and none of the GPCR ones. A result from the complexes that fit would
+therefore be a complete GPCR figure and a kinase figure computed on the short
+half of the kinases, which is the selection this paper exists to object to. Any
+Boltz-2 number will state its coverage per family, and the excluded complexes
+will appear in the attempt log as hardware failures with their lengths rather
+than as absences.
 
 ### 5.4 Evaluation protocol
 
