@@ -38,9 +38,23 @@ from leakfree_dta.utils.io import read_json, read_table, write_json
 
 logger = get_logger(__name__)
 
-BASE_MINUTES = 2.0
+#: Measured, not assumed. A smoke run of three complexes averaging 505 residues
+#: on a Kaggle T4 took 20.1 minutes of Boltz compute: 13.9 for the structure
+#: pass and 6.2 for the affinity pass. The first figure here was 2.0, derived
+#: from the structure pass alone -- Boltz runs affinity as a second pass over
+#: the same inputs, and leaving it out understated every chunk by well over a
+#: factor of two.
+#:
+#: 20.1 min / 3 complexes = 6.7 min each at 505 aa, so
+#: BASE_MINUTES = 6.7 / (505/400)**1.5 = 4.74.
+BASE_MINUTES = 4.74
 BASE_LENGTH = 400
 LENGTH_EXPONENT = 1.5
+
+#: Boltz already hit a CUDA OOM warning at ~500 residues on a 16 GB T4 and
+#: recovered. Above this it is unlikely to, so the plan flags them rather than
+#: letting a session discover it nine hours in.
+OOM_RISK_LENGTH_16GB = 900
 
 #: Leave room in a session for setup, model download and the final write. A
 #: chunk packed to the full session length is a chunk that does not finish.
@@ -113,6 +127,16 @@ def main() -> int:
         default=12.0,
         help="length of one session; Kaggle allows 12 (default)",
     )
+    parser.add_argument(
+        "--max-sequence-length",
+        type=int,
+        default=None,
+        help=(
+            "only chunk complexes at or below this length. For splitting a run "
+            "across GPU tiers: a 16 GB card does not fit the long targets, and "
+            "the excluded rows are reported rather than dropped silently."
+        ),
+    )
     parser.add_argument("--status", action="store_true", help="report progress and exit")
     args = parser.parse_args()
 
@@ -142,6 +166,25 @@ def main() -> int:
             print(f"\ningest what exists at any point:\n"
                   f"  python scripts/ingest_boltz2.py --predictions {output_root}")
         return 0
+
+    if args.max_sequence_length:
+        lengths = subset[schema.TARGET_SEQUENCE].str.len()
+        excluded = subset[lengths > args.max_sequence_length]
+        subset = subset[lengths <= args.max_sequence_length]
+        if len(excluded):
+            # Length correlates with family here, so this is never a neutral
+            # filter. Saying which families it costs is the point.
+            by_family = excluded[schema.TARGET_FAMILY].value_counts()
+            logger.warning(
+                "excluding %d of %d complexes over %d aa; these are NOT dropped "
+                "from the subset, they are left for a larger GPU",
+                len(excluded),
+                len(excluded) + len(subset),
+                args.max_sequence_length,
+            )
+            for family, count in by_family.items():
+                total = int((read_table(root / "subset.csv")[schema.TARGET_FAMILY] == family).sum())
+                logger.warning("  %s: %d of %d (%.1f%%)", family, count, total, 100 * count / total)
 
     budget = args.session_hours * 60 * SAFETY_FRACTION
     chunks = pack(subset, budget)
