@@ -1,3 +1,16 @@
+# =====================================================================
+# EDIT THIS LINE, RUN THE CELL. Everything below is machinery.
+#
+#   "smoke"  -- 3 complexes, ~25 min, proves the setup before a long run
+#   "chunk01" .. "chunk06" -- one per session, 100/84/78/46/132/59 complexes
+#
+CHUNK = "smoke"
+# =====================================================================
+
+CHUNKS_DIR = None  # auto-detected under /kaggle/input; set a path to override
+OUT = "/kaggle/working/outputs"
+SMOKE_N = 3
+
 """Kaggle notebook cell for one Boltz-2 session. Paste this into a GPU notebook.
 
 One session runs one chunk. The pieces that matter are the ones that survive the
@@ -21,11 +34,7 @@ Set CHUNK below, run, then "Save Version" so the output is downloadable.
 # ruff: noqa: E402 - the settings block stays at the top where it is edited;
 # imports follow it because this is pasted into a notebook cell, not imported.
 
-# ---------------------------------------------------------------- settings
-CHUNK = "smoke"  # smoke (3 complexes) | chunk01 | chunk02 | chunk03 | chunk04
-CHUNKS_DIR = None  # auto-detected under /kaggle/input; set a path to override
-OUT = "/kaggle/working/outputs"
-SMOKE_N = 3
+
 
 # ---------------------------------------------------------------- setup
 import json
