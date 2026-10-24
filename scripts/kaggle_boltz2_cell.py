@@ -37,9 +37,34 @@ import time
 from pathlib import Path
 
 started = time.time()
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "boltz>=2.0,<3.0"], check=True)
+
+# Say something before the install, which takes 5-15 minutes and used to run
+# with -q: a cell that prints nothing for a quarter of an hour is
+# indistinguishable from a cell that has hung.
+print("=" * 60, flush=True)
+print(f"Boltz-2 session, chunk={CHUNK}", flush=True)
+print("=" * 60, flush=True)
+
+try:
+    import boltz  # noqa: F401
+
+    print("boltz already present, skipping install", flush=True)
+except ImportError:
+    print("installing boltz (5-15 min; torch and friends)...", flush=True)
+    install = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "boltz>=2.0,<3.0"],
+        capture_output=True,
+        text=True,
+    )
+    if install.returncode != 0:
+        print(install.stdout[-3000:], flush=True)
+        print(install.stderr[-3000:], flush=True)
+        raise SystemExit(f"pip install failed with code {install.returncode}") from None
+    print(f"installed in {(time.time() - started) / 60:.1f} min", flush=True)
 
 import torch
+
+print(f"torch {torch.__version__}, CUDA {torch.version.cuda}", flush=True)
 
 
 def find_chunks_root():
