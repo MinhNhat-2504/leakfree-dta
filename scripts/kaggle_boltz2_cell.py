@@ -22,9 +22,8 @@ Set CHUNK below, run, then "Save Version" so the output is downloadable.
 # imports follow it because this is pasted into a notebook cell, not imported.
 
 # ---------------------------------------------------------------- settings
-CHUNK = "chunk01"  # chunk01 | chunk02 | chunk03 | chunk04, or "smoke" for 3
-CHUNKS_DIR = "/kaggle/input/leakfree-boltz2-chunks/chunks"
-PREVIOUS = "/kaggle/input/leakfree-boltz2-outputs"  # earlier sessions, if any
+CHUNK = "smoke"  # smoke (3 complexes) | chunk01 | chunk02 | chunk03 | chunk04
+CHUNKS_DIR = None  # auto-detected under /kaggle/input; set a path to override
 OUT = "/kaggle/working/outputs"
 SMOKE_N = 3
 
@@ -42,7 +41,32 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-q", "boltz>=2.0,<3.0"]
 
 import torch
 
-chunk_dir = Path(CHUNKS_DIR) / (CHUNK if CHUNK != "smoke" else "chunk01")
+
+def find_chunks_root():
+    """Locate the directory holding chunk01..chunk04 under /kaggle/input.
+
+    Kaggle has moved input paths around -- a dataset has appeared at both
+    /kaggle/input/<slug> and /kaggle/input/datasets/<user>/<slug> -- so the
+    path is discovered rather than written down and corrected later.
+    """
+    if CHUNKS_DIR:
+        return Path(CHUNKS_DIR)
+    for candidate in sorted(Path("/kaggle/input").rglob("chunk01")):
+        if candidate.is_dir() and any(candidate.glob("*.yaml")):
+            return candidate.parent
+    raise SystemExit(
+        "no chunk01/ with YAML files found under /kaggle/input. Add the "
+        "chunks dataset as an input, or set CHUNKS_DIR explicitly."
+    )
+
+
+chunks_root = find_chunks_root()
+chunk_dir = chunks_root / (CHUNK if CHUNK != "smoke" else "chunk01")
+print(f"chunks root  {chunks_root}")
+
+# Earlier sessions' outputs, wherever they were attached.
+previous = [p.parent for p in Path("/kaggle/input").rglob("affinity_*.json")]
+
 out = Path(OUT)
 out.mkdir(parents=True, exist_ok=True)
 
@@ -65,7 +89,7 @@ def predicted_stems(*roots):
 wanted = sorted(p.stem for p in chunk_dir.glob("*.yaml"))
 if CHUNK == "smoke":
     wanted = wanted[:SMOKE_N]
-done = predicted_stems(PREVIOUS, out)
+done = predicted_stems(*previous, out)
 todo = [s for s in wanted if s not in done]
 
 print(f"chunk        {CHUNK}")
