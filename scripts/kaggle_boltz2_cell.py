@@ -45,21 +45,33 @@ print("=" * 60, flush=True)
 print(f"Boltz-2 session, chunk={CHUNK}", flush=True)
 print("=" * 60, flush=True)
 
+print(f"python {platform.python_version()}", flush=True)
+
+
+def pip(*args, label=""):
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", *args], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(result.stdout[-4000:], flush=True)
+        print(result.stderr[-4000:], flush=True)
+        raise SystemExit(f"pip install {label or args[0]} failed ({result.returncode})")
+    return result
+
+
 try:
     import boltz  # noqa: F401
 
     print("boltz already present, skipping install", flush=True)
 except ImportError:
+    # boltz pins dm-tree==0.1.8, which ships no wheel for every Python version
+    # and whose setup.py then needs cmake on PATH to build from source. Putting
+    # cmake there first is cheaper than finding out from a failed wheel build
+    # ten minutes into the install.
+    print("installing cmake first (dm-tree builds from source)...", flush=True)
+    pip("-q", "cmake", "ninja", label="cmake")
     print("installing boltz (5-15 min; torch and friends)...", flush=True)
-    install = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "boltz>=2.0,<3.0"],
-        capture_output=True,
-        text=True,
-    )
-    if install.returncode != 0:
-        print(install.stdout[-3000:], flush=True)
-        print(install.stderr[-3000:], flush=True)
-        raise SystemExit(f"pip install failed with code {install.returncode}") from None
+    pip("boltz>=2.0,<3.0", label="boltz")
     print(f"installed in {(time.time() - started) / 60:.1f} min", flush=True)
 
 import torch
