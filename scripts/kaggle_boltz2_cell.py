@@ -45,38 +45,70 @@ print("=" * 60, flush=True)
 print(f"Boltz-2 session, chunk={CHUNK}", flush=True)
 print("=" * 60, flush=True)
 
-print(f"python {platform.python_version()}", flush=True)
+print(f"notebook python {platform.python_version()}", flush=True)
+
+# boltz declares requires-python ">=3.10,<3.13" and Kaggle's image is on 3.13,
+# so boltz cannot be installed into the notebook's interpreter at all. pip
+# responds by walking backwards through old boltz releases looking for one that
+# fits, and those pull dm-tree==0.1.8, which has no wheel for 3.13 and fails to
+# build. The dm-tree error is a symptom; the Python version is the cause.
+#
+# So boltz gets its own 3.11 environment, and this cell drives it as a
+# subprocess. The venv lives in /kaggle/temp rather than /kaggle/working
+# because everything under working is saved as the notebook's output, and a
+# CUDA torch install is several gigabytes of it.
+VENV = Path("/kaggle/temp/boltz-venv")
+BOLTZ = VENV / "bin" / "boltz"
 
 
-def pip(*args, label=""):
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", *args], capture_output=True, text=True
-    )
+def run(cmd, label):
+    print(f"-> {label}", flush=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(result.stdout[-4000:], flush=True)
         print(result.stderr[-4000:], flush=True)
-        raise SystemExit(f"pip install {label or args[0]} failed ({result.returncode})")
+        raise SystemExit(f"{label} failed ({result.returncode})")
     return result
 
 
-try:
-    import boltz  # noqa: F401
+if BOLTZ.exists():
+    print(f"boltz env already present at {VENV}", flush=True)
+else:
+    run([sys.executable, "-m", "pip", "install", "-q", "uv"], "install uv")
+    run([sys.executable, "-m", "uv", "venv", str(VENV), "--python", "3.11"],
+        "create python 3.11 venv")
+    print("   installing boltz + CUDA torch, several GB, 5-15 min", flush=True)
+    run([sys.executable, "-m", "uv", "pip", "install", "--python", str(VENV / "bin" / "python"),
+         "boltz>=2.0,<3.0"], "install boltz")
+    print(f"   ready in {(time.time() - started) / 60:.1f} min", flush=True)
 
-    print("boltz already present, skipping install", flush=True)
-except ImportError:
-    # boltz pins dm-tree==0.1.8, which ships no wheel for every Python version
-    # and whose setup.py then needs cmake on PATH to build from source. Putting
-    # cmake there first is cheaper than finding out from a failed wheel build
-    # ten minutes into the install.
-    print("installing cmake first (dm-tree builds from source)...", flush=True)
-    pip("-q", "cmake", "ninja", label="cmake")
-    print("installing boltz (5-15 min; torch and friends)...", flush=True)
-    pip("boltz>=2.0,<3.0", label="boltz")
-    print(f"installed in {(time.time() - started) / 60:.1f} min", flush=True)
+# Probe the venv once, here rather than after the run: if its torch cannot see
+# the GPU, that is worth knowing before nine hours of CPU inference, and the
+# same answer is what the attempt log needs afterwards.
+probe = subprocess.run(
+    [
+        str(VENV / "bin" / "python"),
+        "-c",
+        "import json, platform, torch, importlib.metadata as m;"
+        "print(json.dumps({'boltz': m.version('boltz'), 'torch': torch.__version__,"
+        " 'cuda': torch.version.cuda, 'cuda_available': torch.cuda.is_available(),"
+        " 'python': platform.python_version()}))",
+    ],
+    capture_output=True,
+    text=True,
+)
+try:
+    boltz_env = json.loads(probe.stdout.strip())
+except ValueError:
+    boltz_env = {"probe_failed": probe.stderr[-1000:]}
+print(f"boltz env: {boltz_env}", flush=True)
+if boltz_env.get("cuda_available") is False:
+    raise SystemExit(
+        "the boltz venv's torch cannot see the GPU. Check the accelerator is on, "
+        "and do not run a chunk on CPU -- it will not finish."
+    )
 
 import torch
-
-print(f"torch {torch.__version__}, CUDA {torch.version.cuda}", flush=True)
 
 
 def find_chunks_root():
@@ -151,7 +183,7 @@ for stem in todo:
 
 # ---------------------------------------------------------------- run
 cmd = [
-    "boltz", "predict", str(staged),
+    str(BOLTZ), "predict", str(staged),
     "--out_dir", str(out),
     "--use_msa_server",
     "--diffusion_samples", "1",
@@ -186,11 +218,8 @@ missing = [s for s in todo if s not in scored]
 
 metadata = {
     "chunk": CHUNK,
-    "boltz_version": subprocess.run(
-        ["pip", "show", "boltz"], capture_output=True, text=True
-    ).stdout.split("Version: ")[1].split("\n")[0]
-    if shutil.which("pip")
-    else "unknown",
+    "boltz_environment": boltz_env,
+    "notebook_python": platform.python_version(),
     "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
     "msa": "public MSA server (--use_msa_server)",
     "diffusion_samples": 1,
@@ -199,7 +228,6 @@ metadata = {
     "failed": missing,
     "boltz_exit_code": result.returncode,
     "elapsed_seconds": round(elapsed, 1),
-    "python": platform.python_version(),
 }
 (out / f"run_{CHUNK}.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
