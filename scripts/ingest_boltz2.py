@@ -49,6 +49,25 @@ logger = get_logger(__name__)
 POOLED_COVERAGE_FLOOR = 0.667
 
 
+def row_key_from_path(item: Path) -> str:
+    """Recover the row key from an affinity JSON's location.
+
+    Two layouts reach this. Boltz writes
+    ``boltz_results_<key>/predictions/<key>/affinity_<key>.json``, and the
+    Kaggle session cell flattens its keepers into ``affinity/affinity_<key>.json``
+    so a session's output is one directory rather than several hundred.
+
+    Reading the key from the *parent directory* handles the first and silently
+    breaks the second: every file lands in a directory called ``affinity``, so
+    every row key becomes "affinity" and the duplicate check rejects the lot.
+    The filename carries the key in both layouts, so prefer it.
+    """
+    name = item.stem
+    if name.startswith("affinity_"):
+        return name[len("affinity_") :]
+    return item.parent.name
+
+
 def load_predictions(path: Path) -> pd.DataFrame:
     """Read predictions from a CSV, or from a directory of Boltz-2 outputs.
 
@@ -74,8 +93,7 @@ def load_predictions(path: Path) -> pd.DataFrame:
             continue
         # Boltz names outputs after the input stem; the subset wrote inputs
         # named by row key with "||" replaced by "__".
-        stem = item.parent.name if item.parent.name != path.name else item.stem
-        records.append({"row_key": stem.replace("affinity_", ""), "y_pred": float(value)})
+        records.append({"row_key": row_key_from_path(item), "y_pred": float(value)})
 
     if not records:
         raise SystemExit(

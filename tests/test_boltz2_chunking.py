@@ -72,7 +72,10 @@ def test_no_chunk_exceeds_the_budget(chunker):
     assert len(chunks) > 1, "budget is not binding; this test would pass vacuously"
     for chunk in chunks:
         minutes = chunk[schema.TARGET_SEQUENCE].str.len().map(chunker.estimate_minutes).sum()
-        assert minutes <= budget
+        # A complex whose own cost exceeds the budget gets a chunk to itself and
+        # a warning: there is nowhere smaller to put it, and dropping it would
+        # be worse. Every other chunk must fit.
+        assert minutes <= budget or len(chunk) == 1
 
 
 def test_packing_loses_no_complexes_and_duplicates_none(chunker):

@@ -112,8 +112,11 @@ def chunk_progress(chunk_dir: Path, output_root: Path) -> tuple[int, int]:
         return 0, 0
     done = set()
     for item in output_root.rglob("affinity*.json"):
-        stem = item.parent.name if item.parent.name != output_root.name else item.stem
-        done.add(stem.replace("affinity_", ""))
+        # The filename carries the row key in both layouts Boltz output arrives
+        # in; the parent directory only does in one of them. See
+        # row_key_from_path in scripts/ingest_boltz2.py.
+        name = item.stem
+        done.add(name[len("affinity_") :] if name.startswith("affinity_") else item.parent.name)
     return len(wanted & done), len(wanted)
 
 
