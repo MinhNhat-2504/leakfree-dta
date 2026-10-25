@@ -49,6 +49,33 @@ logger = get_logger(__name__)
 POOLED_COVERAGE_FLOOR = 0.667
 
 
+#: Plausible range for a converted prediction, in log units. The dataset's own
+#: labels sit between about 4 and 11; anything far outside that means the
+#: conversion below is wrong, not that the model is unusual.
+PLAUSIBLE_PIC50 = (-2.0, 16.0)
+
+
+def to_pic50(affinity_pred_value: float) -> float:
+    """Convert Boltz-2's affinity output to the pIC50 scale the labels use.
+
+    Boltz-2 reports ``affinity_pred_value`` as log10 of an IC50 **in
+    micromolar**, which the project's FAQ explicitly calls a non-standard
+    pIC50. Lower is stronger: 10 nM reads as -2, 1 uM as 0.
+
+    The labels here are pIC50/pKi/pKd, that is -log10 of a molar
+    concentration, where higher is stronger and typical values run 4 to 11.
+    The two scales are offset by six and run in opposite directions:
+
+        pIC50 = 6 - log10(IC50 in uM)
+
+    Ingesting the raw value would compare roughly 0.5 against roughly 7 and
+    report an RMSE near 6.5 for a model that may be doing perfectly well. That
+    is a unit error, and it is the kind that produces a confident wrong number
+    rather than a crash.
+    """
+    return 6.0 - float(affinity_pred_value)
+
+
 def row_key_from_path(item: Path) -> str:
     """Recover the row key from an affinity JSON's location.
 
@@ -93,7 +120,7 @@ def load_predictions(path: Path) -> pd.DataFrame:
             continue
         # Boltz names outputs after the input stem; the subset wrote inputs
         # named by row key with "||" replaced by "__".
-        records.append({"row_key": row_key_from_path(item), "y_pred": float(value)})
+        records.append({"row_key": row_key_from_path(item), "y_pred": to_pic50(value)})
 
     if not records:
         raise SystemExit(
@@ -140,6 +167,18 @@ def main() -> int:
         raise SystemExit(f"{len(duplicated)} row keys predicted more than once, e.g. {duplicated[:3]}")
 
     pred = pred[np.isfinite(pred["y_pred"])]
+
+    # A unit error here does not crash, it produces a confident wrong number,
+    # so the converted scale is checked before anything is computed from it.
+    low, high = PLAUSIBLE_PIC50
+    outside = pred[(pred["y_pred"] < low) | (pred["y_pred"] > high)]
+    if len(outside):
+        raise SystemExit(
+            f"{len(outside)} of {len(pred)} converted predictions fall outside "
+            f"[{low}, {high}] log units, e.g. {outside['y_pred'].head(3).tolist()}. "
+            "Boltz-2 reports log10(IC50 in uM) and to_pic50 converts it; if the "
+            "model's output scale has changed, that function is what to fix."
+        )
     merged = subset.merge(pred, left_on=schema.ROW_KEY, right_on="row_key", how="inner")
     coverage = len(merged) / len(subset)
     logger.info("scored %d of %d subset complexes (%.1f%%)", len(merged), len(subset), 100 * coverage)
