@@ -31,7 +31,7 @@ from leakfree_dta.data import schema
 from leakfree_dta.eval.bootstrap import compare_models
 from leakfree_dta.eval.metrics import evaluate
 from leakfree_dta.logging import get_logger, setup_logging
-from leakfree_dta.utils.io import write_json
+from leakfree_dta.utils.io import read_json, write_json
 
 logger = get_logger(__name__)
 
@@ -128,6 +128,35 @@ def main() -> int:
         "Models without a star are not distinguishable from Boltz-2 on these rows. "
         "That is a statement about the sample size, not about the models."
     )
+
+    # Keep the trajectory, not just the latest row. The comparison against a
+    # constant moved from -0.122 at 100 rows to -0.068 at 184: the interval
+    # narrowed while the estimate regressed toward zero, which is evidence
+    # about the effect and is invisible if each run overwrites the last.
+    reference = next((r for r in rows if r["model"] == "global_mean"), None)
+    if reference is not None:
+        history_path = runs / "Boltz-2" / "comparison_history.json"
+        history = read_json(history_path) if history_path.exists() else []
+        entry = {
+            "n_rows": len(boltz),
+            "n_protein_groups": int(n_groups),
+            "boltz_rmse": boltz_metrics["rmse"],
+            "boltz_pearson": boltz_metrics["pearson"],
+            "vs_global_mean": reference["boltz_minus_model"],
+            "ci_lower": reference["ci_lower"],
+            "ci_upper": reference["ci_upper"],
+            "p_value": reference["p_value"],
+        }
+        history = [h for h in history if h["n_rows"] != entry["n_rows"]] + [entry]
+        history.sort(key=lambda h: h["n_rows"])
+        write_json(history, history_path)
+        if len(history) > 1:
+            print(f"\n{'rows':>6s} {'groups':>7s} {'RMSE':>7s} {'vs constant':>12s} {'p':>7s}")
+            for h in history:
+                print(
+                    f"{h['n_rows']:6d} {h['n_protein_groups']:7d} {h['boltz_rmse']:7.3f} "
+                    f"{h['vs_global_mean']:+12.3f} {h['p_value']:7.3f}"
+                )
 
     out = runs / "Boltz-2" / "comparison_on_scored_rows.json"
     write_json(
